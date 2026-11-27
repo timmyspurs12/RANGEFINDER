@@ -1,0 +1,52 @@
+{
+  "private": true,
+  "name": "rangefinder",
+  "version": "0.1.0",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "devvit playtest",
+    "typecheck": "tsc --build",
+    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/server/scoring.test.ts src/server/store.test.ts",
+    "test:spec": "node --test spec/scoring.test.cjs",
+    "test": "npm run test:spec && npm run test:unit && npm run test:harness && npm run audit:bundle",
+    "lint": "eslint 'src/**/*.{ts,tsx}'",
+    "login": "devvit login",
+    "deploy": "npm run test:types && npm run lint && devvit upload",
+    "prettier": "prettier --write .",
+    "audit:bundle": "node tools/audit-bundle.mjs",
+    "test:harness": "vitest run src/server/store.harness.test.ts"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "@devvit/start": "0.15.4",
+    "@devvit/web": "0.15.4",
+    "@hono/node-server": "2.1.6",
+    "devvit": "0.15.4",
+    "hono": "4.13.17",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@devvit/test": "^0.15.4",
+    "@eslint/js": "10.0.1",
+    "@tailwindcss/vite": "4.3.5",
+    "@types/node": "^24.13.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "eslint": "10.14.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "tailwindcss": "4.3.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.7",
+    "vitest": "^5.1.2"
+  }
+}

@@ -1,0 +1,273 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ */
+/* Rangefinder identity — "precision field instrument".                */
+/* Charcoal field, restrained amber accent, editorial serif numerals.  */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --rf-bg: #16130e;
+  --rf-panel: #1e1a13;
+  --rf-line: #3a332a;
+  --rf-ink: #f2ead9;
+  --rf-ink-dim: #9a8f7d;
+  --rf-amber: #ffb000;
+  --rf-amber-deep: #c9861f;
+  --rf-good: #7fd482;
+  --rf-bad: #e5604c;
+  --rf-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, ui-serif, serif;
+  --rf-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --rf-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--rf-bg);
+  color: var(--rf-ink);
+  font-family: var(--rf-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.rf-app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 12px;
+  gap: 10px;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(255, 176, 0, 0.07), transparent 60%),
+    var(--rf-bg);
+}
+
+.rf-wordmark {
+  font-family: var(--rf-sans);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--rf-ink);
+}
+
+.rf-wordmark .rf-dot {
+  color: var(--rf-amber);
+}
+
+.rf-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rf-ink-dim);
+}
+
+.rf-tagline {
+  font-family: var(--rf-serif);
+  font-style: italic;
+  color: var(--rf-ink-dim);
+}
+
+.rf-prompt {
+  font-family: var(--rf-serif);
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--rf-ink);
+}
+
+.rf-readout {
+  font-family: var(--rf-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rf-value {
+  font-family: var(--rf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--rf-amber);
+}
+
+.rf-hint {
+  font-size: 12px;
+  color: var(--rf-ink-dim);
+  line-height: 1.4;
+}
+
+.rf-btn {
+  appearance: none;
+  border: 1px solid var(--rf-amber-deep);
+  background: linear-gradient(180deg, rgba(255, 176, 0, 0.16), rgba(255, 176, 0, 0.06));
+  color: var(--rf-amber);
+  font-family: var(--rf-sans);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 13px;
+  border-radius: 10px;
+  padding: 13px 16px;
+  cursor: pointer;
+  transition: transform 0.06s ease, filter 0.12s ease;
+}
+
+.rf-btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.rf-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.rf-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rf-btn:focus-visible,
+input[type='range']:focus-visible {
+  outline: 2px solid var(--rf-amber);
+  outline-offset: 3px;
+}
+
+.rf-panel {
+  background: var(--rf-panel);
+  border: 1px solid var(--rf-line);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.rf-scale-tick {
+  font-family: var(--rf-mono);
+  font-size: 10px;
+  color: var(--rf-ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------ RangeDial ------------------------------ */
+
+.rf-dial {
+  position: relative;
+  height: 56px;
+  margin-top: 4px;
+}
+
+.rf-dial-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24px;
+  height: 8px;
+  border-radius: 4px;
+  background: #2a251c;
+  border: 1px solid var(--rf-line);
+}
+
+.rf-dial-band {
+  position: absolute;
+  top: 24px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--rf-amber), var(--rf-amber-deep));
+  box-shadow: 0 0 0 1px rgba(255, 176, 0, 0.35);
+}
+
+.rf-dial-marker {
+  position: absolute;
+  top: 18px;
+  width: 2px;
+  height: 20px;
+  background: var(--rf-good);
+  border-radius: 1px;
+}
+
+.rf-dial input[type='range'] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 16px;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.rf-dial input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: all;
+  width: 22px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--rf-ink);
+  border: 2px solid var(--rf-amber);
+  cursor: grab;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.rf-dial input[type='range']::-moz-range-thumb {
+  pointer-events: all;
+  width: 18px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--rf-ink);
+  border: 2px solid var(--rf-amber);
+  cursor: grab;
+}
+
+.rf-dial input[type='range']::-moz-range-track {
+  background: transparent;
+}
+
+/* ------------------------------ Reveal ------------------------------ */
+
+.rf-answer-line {
+  font-family: var(--rf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--rf-good);
+}
+
+.rf-score-line {
+  font-family: var(--rf-serif);
+  font-size: 20px;
+  color: var(--rf-ink);
+}
+
+.rf-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--rf-line);
+}
+
+.rf-badge-caught {
+  color: var(--rf-good);
+  border-color: rgba(127, 212, 130, 0.5);
+}
+
+.rf-badge-missed {
+  color: var(--rf-bad);
+  border-color: rgba(229, 96, 76, 0.5);
+}
+
+.rf-source {
+  font-size: 11px;
+  color: var(--rf-ink-dim);
+}
+
+.rf-source a {
+  color: var(--rf-amber-deep);
+  text-decoration: underline;
+}

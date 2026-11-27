@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.devvit/
+tmp/
+*.log
+.DS_Store
+
+# Release artifacts (distributed via session file viewer, not committed)
+artifacts/
