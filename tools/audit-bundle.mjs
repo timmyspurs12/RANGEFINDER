@@ -20,6 +20,21 @@ const walk = (dir) => {
   }
 };
 
+let stats;
+try {
+  stats = statSync(clientDir);
+} catch {
+  console.error(
+    `audit:bundle cannot run: ${clientDir} does not exist yet.\n` +
+      'The audit scans the BUILT client bundle — run `npm run build` first, then re-run `npm run audit:bundle`.'
+  );
+  process.exit(1);
+}
+if (!stats.isDirectory()) {
+  console.error(`audit:bundle cannot run: ${clientDir} is not a directory.`);
+  process.exit(1);
+}
+
 walk(clientDir);
 if (offenders.length > 0) {
   console.error('ANSWER LEAK IN CLIENT BUNDLE:');

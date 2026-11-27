@@ -179,15 +179,17 @@ A warning `update available from 0.15.4 to 0.15.6` may appear — **ignore it fo
 this playtest**; 0.15.4 is the version every prior milestone was verified
 against.
 
-Run the project test battery **before authenticating** (already green at
-`6402531`):
+Run the project test battery **before authenticating** (already green at the
+current commit). **Build first** — `npm test` ends with the client-bundle leak
+audit, which scans `dist/`; on a fresh clone `dist/` does not exist until the
+first build:
 
 ```powershell
-npm test ; npm run typecheck ; npm run build   # PowerShell (semicolon chains)
+npm run build ; npm run typecheck ; npm test   # PowerShell (semicolon chains)
 ```
 
 ```bash
-npm test && npm run typecheck && npm run build  # Git Bash
+npm run build && npm run typecheck && npm test  # Git Bash
 ```
 
 ## 4. Authenticate — where `devvit login` belongs
@@ -581,6 +583,7 @@ await fetch('/api/erase', { method: 'POST' }).then((r) => r.json());
 | Playtest rejects the subreddit | Test subreddits must have < 200 members and be moderated by you. |
 | Post missing after install | Use the moderator menu item (§6 step 3). |
 | Playtest errors "Your app doesn't exist yet - you'll need to run 'devvit upload' once…" (or "run 'npx devvit init' before you can playtest") | The app is not yet registered in the App Directory — run `npx devvit upload` once (§5a), then `npm run dev`. Do **not** run `devvit init` inside this repo (it scaffolds a new project). |
+| `audit:bundle` fails with `ENOENT … dist\client` on a fresh clone | `dist/` is not committed (gitignored). Run `npm run build` first, then `npm test` — see the ordering in §3. (Recent versions of the audit tool print a clear message instead of a stack trace.) |
 | Backend errors mentioning storage limits | Unpublished apps have a smaller Redis quota — clear data (`devvit uninstall` §8) and retry. |
 | Logs empty in the second terminal | `devvit logs` needs an active installation; keep the playtest session running, add `-s 30m`. |
 
