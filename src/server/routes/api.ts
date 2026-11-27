@@ -9,10 +9,10 @@ import type {
   SubmitRequest,
   SubmitResponse,
 } from '../../shared/api';
-import { formatQuantity } from '../../shared/api';
 import { activeChallenge, toPublic } from '../challenge';
 import type { ChallengeDef } from '../challenge';
-import { scoreApproved, validateInterval } from '../scoring';
+import { validateInterval } from '../scoring';
+import { buildRecord } from '../record';
 import {
   getDraft,
   getSubmission,
@@ -48,27 +48,6 @@ export function validateSubmitInput(
     return { ok: false, status: 400, message: v.reason };
   }
   return { ok: true, l: b.l as number, u: b.u as number };
-}
-
-function buildRecord(
-  challenge: ChallengeDef,
-  l: number,
-  u: number,
-  at: number
-): ScoreRecord {
-  const scored = scoreApproved(l, u, challenge.answer, challenge.domain.b - challenge.domain.a);
-  return {
-    l,
-    u,
-    W: scored.W,
-    S: scored.S,
-    caught: scored.caught,
-    answer: challenge.answer,
-    answerLabel: formatQuantity(challenge.answer),
-    unit: challenge.unit,
-    explanation: challenge.explanation,
-    at,
-  };
 }
 
 api.get('/state', async (c) => {
