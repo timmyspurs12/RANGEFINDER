@@ -248,7 +248,14 @@ export const App = () => {
         disabled={mode.phase === 'submitting'}
         onClick={() => void submit()}
       >
-        {mode.phase === 'submitting' ? 'Locking…' : 'Lock estimate'}
+        {mode.phase === 'submitting' ? (
+          <>
+            <span className="rf-spin" aria-hidden="true" />
+            Locking…
+          </>
+        ) : (
+          'Lock estimate'
+        )}
       </button>
       {!mode.loggedIn ? (
         <div className="rf-hint" style={{ textAlign: 'center' }}>

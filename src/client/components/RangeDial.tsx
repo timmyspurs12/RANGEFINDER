@@ -18,20 +18,23 @@ const logToTick = (v: number, a: number): number => Math.round((v - a) * TICKS_P
 const tickToLog = (t: number, a: number): number => a + t / TICKS_PER_DECADE;
 
 /**
- * Logarithmic dual-handle range slider.
+ * Logarithmic dual-handle range slider — the tactile control layer.
  *
- * Two native <input type="range"> elements are stacked over one visual track:
- * native inputs give us touch, mouse and keyboard (arrow keys) for free, and
- * visible focus outlines are styled in index.css. Each handle is clamped so the
- * lower bound stays strictly below the upper bound (Stage 3 brief: "enforce
- * lower < upper"); the smallest selectable gap is one tick (0.01 decades).
+ * Two native <input type="range"> elements remain the interactive surface
+ * (touch, mouse, keyboard arrow keys), stacked over custom visual rails and
+ * physical-looking knobs that mirror the state. Each handle is clamped so the
+ * lower bound stays strictly below the upper bound; the smallest selectable
+ * gap is one tick (0.01 decades). Focus and active states are reflected on
+ * the knobs via component state (works in every WebView, no :has() needed).
  */
 export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) => {
   const totalTicks = useMemo(() => Math.round((b - a) * TICKS_PER_DECADE), [a, b]);
   const [active, setActive] = useState<'lower' | 'upper' | null>(null);
+  const [focused, setFocused] = useState<'lower' | 'upper' | null>(null);
 
   const lowerTick = logToTick(l, a);
   const upperTick = logToTick(u, a);
+  const pct = (t: number): number => (t / totalTicks) * 100;
 
   const onLower = useCallback(
     (tick: number) => {
@@ -49,21 +52,24 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
     [a, l, lowerTick, onChange, totalTicks]
   );
 
-  const pct = (t: number): number => (t / totalTicks) * 100;
+  const knob = (which: 'lower' | 'upper'): string => {
+    const isActive = active === which;
+    const isFocused = focused === which;
+    return `rfd-knob rfd-knob-${which}${isActive ? ' is-active' : ''}${isFocused ? ' is-focused' : ''}`;
+  };
 
   return (
-    <div className="rf-dial">
-      <div className="rf-dial-track" aria-hidden="true" />
-      <div
-        className="rf-dial-band"
-        aria-hidden="true"
-        style={{
-          left: `${pct(lowerTick)}%`,
-          width: `${pct(upperTick - lowerTick)}%`,
-          opacity: disabled ? 0.5 : 1,
-        }}
-      />
+    <div className={`rfd${disabled ? ' rfd-locked' : ''}`}>
+      <div className="rfd-rail" aria-hidden="true">
+        <div
+          className="rfd-fill"
+          style={{ left: `${pct(lowerTick)}%`, width: `${pct(upperTick - lowerTick)}%` }}
+        />
+        <span className={knob('lower')} style={{ left: `${pct(lowerTick)}%` }} />
+        <span className={knob('upper')} style={{ left: `${pct(upperTick)}%` }} />
+      </div>
       <input
+        className="rfd-input"
         type="range"
         min={0}
         max={upperTick - 1}
@@ -75,9 +81,15 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
         onChange={(e) => onLower(Number(e.target.value))}
         onPointerDown={() => setActive('lower')}
         onPointerUp={() => setActive(null)}
-        onBlur={() => setActive(null)}
+        onFocus={() => setFocused('lower')}
+        onBlur={() => {
+          setActive(null);
+          setFocused(null);
+        }}
+        style={{ zIndex: active === 'upper' ? 3 : 2 }}
       />
       <input
+        className="rfd-input"
         type="range"
         min={lowerTick + 1}
         max={totalTicks}
@@ -89,7 +101,11 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
         onChange={(e) => onUpper(Number(e.target.value))}
         onPointerDown={() => setActive('upper')}
         onPointerUp={() => setActive(null)}
-        onBlur={() => setActive(null)}
+        onFocus={() => setFocused('upper')}
+        onBlur={() => {
+          setActive(null);
+          setFocused(null);
+        }}
         style={{ zIndex: active === 'lower' ? 3 : 2 }}
       />
     </div>

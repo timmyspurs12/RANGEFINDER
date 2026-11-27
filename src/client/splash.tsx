@@ -3,6 +3,7 @@ import './index.css';
 import { context, requestExpandedMode } from '@devvit/web/client';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { OrbitalSphere } from './components/OrbitalSphere';
 
 export const Splash = () => {
   const today = new Date().toLocaleDateString('en-US', {
@@ -12,24 +13,21 @@ export const Splash = () => {
   });
 
   return (
-    <div
-      className="rf-app"
-      style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: 14 }}
-    >
+    <div className="rf-app rf-splash">
       <div className="rf-kicker">{today}</div>
+      <OrbitalSphere a={2} b={6} compact />
       <h1 className="rf-wordmark">
         Rangefinder<span className="rf-dot">·</span>
       </h1>
-      <p className="rf-tagline" style={{ fontSize: 18, margin: 0 }}>
+      <p className="rf-tagline" style={{ fontSize: 18 }}>
         Can your subreddit estimate reality?
       </p>
       <p className="rf-hint" style={{ maxWidth: 300, margin: 0 }}>
-        Three real-world numbers a day. Set the range you believe contains each answer — and learn
-        how much you don’t know.
+        One real-world question. Set the range you believe contains the answer — and learn how much
+        you don’t know.
       </p>
       <button
-        className="rf-btn"
-        style={{ marginTop: 10, minWidth: 220 }}
+        className="rf-btn rf-splash-cta"
         onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
       >
         Play today’s challenge
