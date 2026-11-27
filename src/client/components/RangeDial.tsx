@@ -18,14 +18,15 @@ const logToTick = (v: number, a: number): number => Math.round((v - a) * TICKS_P
 const tickToLog = (t: number, a: number): number => a + t / TICKS_PER_DECADE;
 
 /**
- * Logarithmic dual-handle range slider — the tactile control layer.
+ * THE main interactive component (Stage 3.5): a large ink-outlined dual-thumb
+ * slider — 64px tall control, 40px visual thumbs (44px hit area), acid-lime
+ * selection fill, hatched dimmed segments outside the selection.
  *
  * Two native <input type="range"> elements remain the interactive surface
- * (touch, mouse, keyboard arrow keys), stacked over custom visual rails and
- * physical-looking knobs that mirror the state. Each handle is clamped so the
- * lower bound stays strictly below the upper bound; the smallest selectable
- * gap is one tick (0.01 decades). Focus and active states are reflected on
- * the knobs via component state (works in every WebView, no :has() needed).
+ * (touch, mouse, keyboard arrow keys) stacked invisibly over the visuals,
+ * which mirror state. Handles are clamped so the lower bound stays strictly
+ * below the upper bound; the smallest selectable gap is one tick (0.01
+ * decades). `touch-action: pan-y` keeps Reddit's vertical scroll native.
  */
 export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) => {
   const totalTicks = useMemo(() => Math.round((b - a) * TICKS_PER_DECADE), [a, b]);
@@ -52,22 +53,35 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
     [a, l, lowerTick, onChange, totalTicks]
   );
 
-  const knob = (which: 'lower' | 'upper'): string => {
+  const thumbCls = (which: 'lower' | 'upper'): string => {
     const isActive = active === which;
     const isFocused = focused === which;
-    return `rfd-knob rfd-knob-${which}${isActive ? ' is-active' : ''}${isFocused ? ' is-focused' : ''}`;
+    return `rfd-thumb rfd-knob-${which}${isActive ? ' is-active' : ''}${isFocused ? ' is-focused' : ''}`;
   };
 
   return (
     <div className={`rfd${disabled ? ' rfd-locked' : ''}`}>
       <div className="rfd-rail" aria-hidden="true">
+        <div className="rfd-dim rfd-dim-left" style={{ width: `${pct(lowerTick)}%` }} />
         <div
           className="rfd-fill"
           style={{ left: `${pct(lowerTick)}%`, width: `${pct(upperTick - lowerTick)}%` }}
         />
-        <span className={knob('lower')} style={{ left: `${pct(lowerTick)}%` }} />
-        <span className={knob('upper')} style={{ left: `${pct(upperTick)}%` }} />
+        <div
+          className="rfd-dim rfd-dim-right"
+          style={{ width: `${100 - pct(upperTick)}%` }}
+        />
       </div>
+      <span
+        aria-hidden="true"
+        className={thumbCls('lower')}
+        style={{ left: `${pct(lowerTick)}%` }}
+      />
+      <span
+        aria-hidden="true"
+        className={thumbCls('upper')}
+        style={{ left: `${pct(upperTick)}%` }}
+      />
       <input
         className="rfd-input"
         type="range"
