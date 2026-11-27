@@ -319,15 +319,16 @@ npm run dev        # Git Bash
 ```
 
 Because neither the `dev` script nor `devvit.json` pins a subreddit, the CLI
-uses the **default playtest subreddit** created at upload time (typically
-`r/rangefinder_dev`; if none exists yet it creates one — verified in both
+uses the **default playtest subreddit** created at upload time — for this
+project that is **`r/rangefinder_daily_dev`** (actually created on 2026-11-27;
+if none exists yet the CLI creates one — verified in both
 `upload.js` and `playtest.js` `run()`) and starts the session. Expected success
 output (from the official quickstart):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ ✓ Playtest ready                                                            │
-│ ➜ URL: https://www.reddit.com/r/rangefinder_dev/?playtest=rangefinder       │
+│ ➜ URL: https://www.reddit.com/r/rangefinder_daily_dev/?playtest=rangefinder-daily       │
 │ ➜ Version: v0.0.0.x                                                         │
 │ ➜ Open the URL above and refresh to see your latest changes.                │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -396,15 +397,15 @@ challenge post automatically** (`src/server/routes/triggers.ts` →
 
 - **Primary:** the `npm run dev` terminal — logs stream continuously
   (`--show-timestamps` for timestamps, `-j` for JSON lines, `-s 15m` to replay
-  recent history: `npx devvit playtest rangefinder_dev -s 15m`).
+  recent history: `npx devvit playtest rangefinder_daily_dev -s 15m`).
 - **Independent stream** (second terminal, while the session runs):
 
 ```powershell
-npx devvit logs rangefinder_dev        # PowerShell
+npx devvit logs rangefinder_daily_dev        # PowerShell
 ```
 
 ```bash
-npx devvit logs rangefinder_dev        # Git Bash
+npx devvit logs rangefinder_daily_dev        # Git Bash
 ```
 
 Route errors appear with the app's own `console.error` prefixes
@@ -421,16 +422,23 @@ and UI states (§C) are the success evidence.
   installation, so uninstalling removes exactly that installation's data):
 
 ```powershell
-npx devvit uninstall rangefinder_dev rangefinder    # PowerShell — SUBREDDIT [APP]
+npx devvit uninstall rangefinder_daily_dev rangefinder-daily    # PowerShell — SUBREDDIT [APP]
 ```
 
 ```bash
-npx devvit uninstall rangefinder_dev rangefinder    # Git Bash
+npx devvit uninstall rangefinder_daily_dev rangefinder-daily    # Git Bash
 ```
 
-- The auto-created `r/rangefinder_dev` subreddit is dedicated to this app;
+- The auto-created `r/rangefinder_daily_dev` subreddit is dedicated to this app;
   deleting it via Reddit's own settings removes all remaining traces. **Never
   run `uninstall` against a subreddit that hosts other apps or community data.**
+- **App name provenance:** the CLI auto-renamed the app to `rangefinder-daily`
+  at first `devvit upload` (the name `rangefinder` was unavailable in the App
+  Directory) and wrote the new name into `devvit.json`. The App Directory slug,
+  the default playtest subreddit, and this repo's `devvit.json` all use
+  `rangefinder-daily` and must stay in sync — a clone whose `devvit.json` still
+  says `rangefinder` will fail `devvit playtest` with an app-not-found /
+  ownership error.
 - Per-user challenge data can be wiped individually through the product itself
   (`POST /api/erase`, §C items 10–11) — no shell/Redis access needed.
 
