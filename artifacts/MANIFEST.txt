@@ -1,0 +1,61 @@
+RANGEFINDER — Stage 3.2.3 FINAL self-contained source handoff
+==============================================================
+Branch:  arena/24a0cc5a-rangefinder
+Source commit (full SHA):
+  2aba2c01958b18648e5087ab0e62fd03fab2e898
+
+PROVENANCE NOTE (important): the commit previously reported as
+861a8b9aa6e577370a4c1aea7cccc119009e24dc (Stage 3.2.2) is CONTENT-IDENTICAL
+to 2aba2c0 but is no longer a valid Git object name: a sandbox recreation
+re-cloned the repository at af5358c and the later commit objects were lost
+(third occurrence; same pattern as the 65def9c restore). The working tree
+was restored by the platform snapshot and re-committed as 2aba2c0 after
+verification: runbook Stage 3.2.2 markers present (bundle transfer §2a/2b/2c,
+public-demo §5c, official "Is private" quote, zero stale 144659d refs),
+README upload step present, full battery green (spec 18/18, unit 18/18,
+harness 8/8, tsc 0 errors, eslint 0, vite build, audit:bundle OK),
+npm ci reinstalled the exact pinned lockfile. af5358c (Initial commit) is
+the shared root of both histories.
+
+1) rangefinder-stage3.2.2.bundle  — 233,072 bytes
+   SHA-256 866080af8f02ab3152c6c90c57e97f12983115ecd3a6ff0cc2c29719f7147877
+   Complete reachable history of refs/heads/arena/24a0cc5a-rangefinder:
+   af5358c -> 2aba2c0. Verified: git bundle verify ("records a complete
+   history"), git bundle list-heads (advertised ref = the exact full SHA
+   above), fresh clone + explicit checkout (git clone from a bundle has no
+   remote HEAD — always run 'git checkout arena/24a0cc5a-rangefinder'
+   afterwards), fresh-clone HEAD == the exact SHA, git fsck clean.
+   docs/PLAYTEST-RUNBOOK.md inside the clone is byte-identical to the
+   committed version (SHA-256 of the file:
+   2d97c570cc18bf08215237e385b32137ace045f4c0a55d1327f2e8924ae6c8c8).
+   Fresh-clone reproducibility (run INSIDE the clone): npm ci OK;
+   npx devvit --version = @devvit/cli/0.15.4; npm test = spec 18/18 +
+   unit 18/18 + @devvit/test harness 8/8 + audit:bundle OK; tsc --build
+   exit 0 (from-scratch, tsbuildinfo cleared); eslint exit 0;
+   vite build complete; audit:bundle OK (no answer values in dist/client).
+
+2) rangefinder-stage3.2.2-source.zip — 236,574 bytes
+   SHA-256 8d621d3a6fceec53eec1d9100bbcdef55e90c8884147ba04dc10a28aa357f037
+   git archive of the exact commit above (no working-directory content;
+   commit SHA stamped in the archive comment). 56 files: application
+   source, tests, Stage 2.1 specification + golden vectors, Stage 3 / 3.1 /
+   3.2 / 3.2.1 / 3.2.2 documentation incl. the corrected PLAYTEST-RUNBOOK.md,
+   README, package.json + package-lock.json, devvit.json, tsconfig/vite/
+   eslint configuration. Verified: unzip -t integrity OK; zero entries
+   matching node_modules / .git / .devvit / .env / dist / tokens.
+   docs/PLAYTEST-RUNBOOK.md inside the ZIP is byte-identical to the
+   committed version (same SHA-256 2d97c570…6c8c8 as above).
+   Fallback only — contains no Git history, so the commit cannot be
+   re-verified with git inside it. Prefer the bundle.
+
+Superseded: the Stage 3.2.1 artifacts (rangefinder-stage3.2.1.bundle,
+rangefinder-stage3.2.1-source.zip, cut from 6402531) remain valid snapshots
+of their commit but do NOT include the Stage 3.2.2 runbook corrections and
+are superseded by the two files above.
+
+After either path, on Windows (PowerShell or Git Bash):
+  npm ci ; npx devvit --version   (must print 0.15.4) ; npm test
+  — all BEFORE npx devvit login. Then follow docs/PLAYTEST-RUNBOOK.md
+  (login -> whoami -> upload once -> playtest <public-test-subreddit>).
+  devvit publish remains prohibited. A2 remains UNRESOLVED until the live
+  duplicate-submission race (runbook §B) is observed in authenticated Reddit.
