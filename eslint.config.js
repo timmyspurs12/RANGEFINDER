@@ -69,7 +69,6 @@ export default defineConfig([
       '**/build/**',
       'eslint.config.js',
       '**/vite.config.ts',
-      '**/vite.preview.config.ts',
       'devvit.config.ts',
     ],
     languageOptions: {
@@ -81,31 +80,7 @@ export default defineConfig([
     extends: ['js/recommended'],
   },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    files: ['src/game/**/*.{ts,tsx}', 'src/ui/**/*.{ts,tsx}', 'src/preview/**/*.{ts,tsx}'],
-    ignores: ['src/game/**/*.test.ts'],
-    languageOptions: {
-      ecmaVersion: 2023,
-      globals: globals.browser,
-      parserOptions: {
-        project: ['./tools/tsconfig.v4.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    plugins: {
-      'react-hooks': reactHooks,
-    },
-    rules: {
-      ...reactHooks.configs.recommended.rules,
-    },
-  },
-  {
     files: ['src/server/**/*.test.ts'],
-    languageOptions: { ecmaVersion: 2023, globals: globals.node },
-    rules: { '@typescript-eslint/no-floating-promises': 'off' },
-  },
-  {
-    files: ['src/game/**/*.test.ts'],
     languageOptions: { ecmaVersion: 2023, globals: globals.node },
     rules: { '@typescript-eslint/no-floating-promises': 'off' },
   },
