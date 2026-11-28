@@ -1,7 +1,6 @@
 import { formatQuantity } from '../../shared/api';
 import type { ChallengePublic } from '../../shared/api';
 import { RangeDial } from './RangeDial';
-import { HeroStrip } from './HeroStrip';
 
 type ChallengeCardProps = {
   challenge: ChallengePublic;
@@ -12,10 +11,10 @@ type ChallengeCardProps = {
 };
 
 /**
- * The estimation surface (Stage 3.5): the question is the editorial hero, the
- * dual-handle prediction slider is the main event. Values stay in log10 space
- * internally; every displayed quantity is physical (10^x). Layout never
- * overflows: everything is fluid, the app shell clips its garnish layer.
+ * The estimation screen (Stage 3.6): the instrument at work. Question up
+ * top, oversized porcelain odometer counters, then the measuring drum —
+ * no illustration here; the controls ARE the experience. Values stay in
+ * log10 space internally; displayed quantities are physical (10^x).
  */
 export const ChallengeCard = ({ challenge, l, u, disabled, onChange }: ChallengeCardProps) => {
   const lowerKm = Math.pow(10, l);
@@ -25,35 +24,39 @@ export const ChallengeCard = ({ challenge, l, u, disabled, onChange }: Challenge
   for (let t = Math.ceil(challenge.domain.a); t <= Math.floor(challenge.domain.b); t++) {
     decades.push(t);
   }
-  const span = challenge.domain.b - challenge.domain.a;
-  const widthPct = ((u - l) / span) * 100;
 
   return (
-    <div className="rf-panel">
-      <div className="rf-eyebrow">
-        <span className="rf-kicker">Daily challenge · Round 1 of 1 (prototype)</span>
-        <span className="rf-index">01</span>
-      </div>
+    <div style={{ display: 'contents' }}>
+      <header className="rf-g-top">
+        <div style={{ minWidth: 0 }}>
+          <p className="rf-kick" style={{ margin: 0 }}>
+            Today’s measurement · log scale {challenge.minLabel}–{challenge.maxLabel}
+          </p>
+          <h2 className="rf-q">{challenge.prompt}</h2>
+        </div>
+        <span className="rf-date">
+          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+        </span>
+      </header>
 
-      <h2 className="rf-prompt">{challenge.prompt}</h2>
-
-      <HeroStrip compact />
-
-      <div className="rf-readouts">
-        <div className="rf-readout-block is-low">
-          <span className="rf-readout-label">Lower</span>
-          <span className="rf-readout-value" aria-live="polite">
+      <div className="rf-counters" aria-hidden="false">
+        <div className="rf-counter">
+          <span className="rf-c-lab">Lower bound</span>
+          <span className="rf-c-val" aria-live="polite">
             {formatQuantity(lowerKm)}
           </span>
-          <span className="rf-readout-unit">{challenge.unit}</span>
+          <span className="rf-c-unit">{challenge.unit}</span>
         </div>
-        <div className="rf-readout-divider" aria-hidden="true" />
-        <div className="rf-readout-block is-high">
-          <span className="rf-readout-label">Upper</span>
-          <span className="rf-readout-value" aria-live="polite">
+        <div className="rf-c-joint" aria-hidden="true">
+          <i />
+          <i />
+        </div>
+        <div className="rf-counter">
+          <span className="rf-c-lab">Upper bound</span>
+          <span className="rf-c-val" aria-live="polite">
             {formatQuantity(upperKm)}
           </span>
-          <span className="rf-readout-unit">{challenge.unit}</span>
+          <span className="rf-c-unit">{challenge.unit}</span>
         </div>
       </div>
 
@@ -66,41 +69,18 @@ export const ChallengeCard = ({ challenge, l, u, disabled, onChange }: Challenge
         onChange={onChange}
       />
 
-      <div className="rf-ruler" aria-hidden="true">
-        {decades.map((t) => (
-          <span
-            key={t}
-            className="rf-ruler-major"
-            style={{ left: `${((t - challenge.domain.a) / span) * 100}%` }}
-          >
-            <i />
-            <span>{formatQuantity(Math.pow(10, t))}</span>
-          </span>
-        ))}
+      <div className="rf-rulerzone">
+        <div className="rf-ruler" aria-hidden="true">
+          {decades.map((t) => (
+            <span key={t}>{formatQuantity(Math.pow(10, t))}</span>
+          ))}
+        </div>
       </div>
 
-      <div className="rf-scale-tick">
-        <span>{challenge.minLabel}</span>
-        <span>log scale · range width {widthPct.toFixed(0)}%</span>
-        <span>{challenge.maxLabel}</span>
-      </div>
-
-      <div className="rf-howto">
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <path
-            d="M2 9 h4 M12 9 h4 M9 2 v4 M9 12 v4"
-            stroke="#141a24"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle cx="9" cy="9" r="3.2" fill="#a8e10c" stroke="#141a24" strokeWidth="2" />
-        </svg>
-        <span>
-          Drag the <b>two handles</b> to set a range. The answer is worth <b>100</b> if you pin it
-          exactly — a full-scale range scores <b>0</b>. Sharper ranges score higher, but miss
-          completely and you go <b>negative</b>.
-        </span>
-      </div>
+      <p className="rf-howto">
+        Drag both <b>brass thumbs</b> to set your window — sharper windows score higher, a
+        full-scale window scores <b>0</b>, and missing the truth scores <b>negative</b>.
+      </p>
     </div>
   );
 };

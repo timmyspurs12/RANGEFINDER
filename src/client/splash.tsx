@@ -1,66 +1,81 @@
 import './index.css';
 
 import { context, requestExpandedMode } from '@devvit/web/client';
+import { useEffect, useState } from 'react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HeroStrip } from './components/HeroStrip';
+import type { ChallengePublic, StateResponse } from '../shared/api';
+import { InstrumentPlate } from './components/InstrumentPlate';
 
+/**
+ * Splash (Stage 3.6): challenge-first. The real daily question is fetched
+ * read-only from GET /api/state (public projection only — the answer never
+ * leaves the server pre-submission) and becomes the hero, explained by the
+ * challenge-specific instrument plate. On any failure the splash degrades
+ * to honest generic copy; the game screen remains authoritative.
+ */
 export const Splash = () => {
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  const [challenge, setChallenge] = useState<ChallengePublic | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/state')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as StateResponse;
+        if (data.type !== 'state') throw new Error('Unexpected response');
+        if (alive) setChallenge(data.challenge);
+      })
+      .catch(() => {
+        /* splash degrades to generic copy; the game screen is authoritative */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const today = new Date()
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    .toUpperCase();
+  const prompt = challenge?.prompt ?? 'How close can you get to the truth?';
 
   return (
     <div className="rf-app rf-splash">
-      <div className="rf-garnish" aria-hidden="true">
-        <svg viewBox="0 0 640 900" preserveAspectRatio="none" style={{ inset: 0, width: '100%', height: '100%' }}>
-          <g stroke="#141a24" strokeWidth="2" fill="none" opacity="0.35">
-            <circle cx="46" cy="120" r="10" fill="#eaf7c8" />
-            <circle cx="596" cy="210" r="8" fill="#fbe3df" />
-            <path d="M60 760 l6 13 14 1 -10 9 3 14 -13 -7 -13 7 3 -14 -10 -9 14 -1 z" fill="#a8e10c" />
-            <path d="M580 640 l16 6 -16 6 z" fill="#2547f4" />
-            <circle cx="80" cy="480" r="6" fill="#fffdf7" />
-          </g>
-        </svg>
-      </div>
+      <span className="rf-screw tl" aria-hidden="true" />
+      <span className="rf-screw tr" aria-hidden="true" />
+      <span className="rf-screw bl" aria-hidden="true" />
+      <span className="rf-screw br" aria-hidden="true" />
 
-      <div className="rf-brandrow">
-        <h1 className="rf-wordmark" style={{ margin: 0 }}>
-          Rangefinder<span className="rf-dot">·</span>
-        </h1>
-        <span className="rf-meta">
-          Round <b>01</b> · prototype
-        </span>
-      </div>
+      <header className="rf-nameplate">
+        <span className="rf-brand">RANGEFINDER</span>
+        <span className="rf-rule" aria-hidden="true" />
+        <span className="rf-meta">DAILY SURVEY · {today}</span>
+      </header>
 
-      <div className="rf-kicker" style={{ textAlign: 'center' }}>
-        {today}
-      </div>
+      <span className="rf-kick">
+        {challenge
+          ? `Today’s measurement · log scale ${challenge.minLabel}–${challenge.maxLabel}`
+          : 'Today’s measurement'}
+      </span>
 
-      <h2 className="rf-prompt" style={{ textAlign: 'center' }}>
-        How close can your subreddit get to the truth?
-      </h2>
+      <h1 className="rf-q-hero">{prompt}</h1>
 
-      <HeroStrip />
+      <InstrumentPlate prompt={prompt} />
 
-      <p className="rf-hint" style={{ textAlign: 'center', maxWidth: 420, margin: '0 auto' }}>
-        One real-world question. <b style={{ color: 'var(--rf-ink)' }}>Set the range</b> you
-        believe contains the answer — like 40,000–60,000 km. Nail it exactly for{' '}
-        <b style={{ color: 'var(--rf-ink)' }}>100</b>; play it safe across the whole scale for{' '}
-        <b style={{ color: 'var(--rf-ink)' }}>0</b>; miss, and you go{' '}
-        <b style={{ color: 'var(--rf-coral)' }}>negative</b>.
-      </p>
-
-      <button
-        className="rf-btn rf-splash-cta"
-        onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
-      >
-        Play today’s challenge
-      </button>
-      <div className="rf-footnote">
-        {context.username ? `Playing as ${context.username}` : 'You’re about to make an estimate'}
+      <div className="rf-splash-foot">
+        <button
+          className="rf-btn rf-splash-cta"
+          onClick={(e) => requestExpandedMode(e.nativeEvent, 'game')}
+        >
+          START MEASURING
+        </button>
+        <p className="rf-fine">
+          You’ll set a range on a log scale — pin the value exactly for <b>100</b>, take the full
+          scale for <b>0</b>, miss and score <b>negative</b>.
+        </p>
+        <div className="rf-footnote">
+          {context.username ? `Sighting in as ${context.username}` : 'You’re about to make an estimate'}
+        </div>
       </div>
     </div>
   );

@@ -176,22 +176,26 @@ export const App = () => {
 
   if (mode.phase === 'loading') {
     return (
-      <div className="rf-app" style={{ justifyContent: 'center', alignItems: 'center' }}>
-        <div className="rf-wordmark">
-          Rangefinder<span className="rf-dot">·</span>
-        </div>
-        <div className="rf-kicker">Sighting in…</div>
+      <div className="rf-app rf-center">
+        <span className="rf-screw tl" aria-hidden="true" />
+        <span className="rf-screw tr" aria-hidden="true" />
+        <span className="rf-screw bl" aria-hidden="true" />
+        <span className="rf-screw br" aria-hidden="true" />
+        <div className="rf-brand">RANGEFINDER</div>
+        <div className="rf-kick">Sighting in…</div>
       </div>
     );
   }
 
   if (mode.phase === 'error' || !mode.challenge) {
     return (
-      <div className="rf-app" style={{ justifyContent: 'center', alignItems: 'center', gap: 10 }}>
-        <div className="rf-wordmark">
-          Rangefinder<span className="rf-dot">·</span>
-        </div>
-        <div className="rf-hint" style={{ textAlign: 'center' }}>
+      <div className="rf-app rf-center">
+        <span className="rf-screw tl" aria-hidden="true" />
+        <span className="rf-screw tr" aria-hidden="true" />
+        <span className="rf-screw bl" aria-hidden="true" />
+        <span className="rf-screw br" aria-hidden="true" />
+        <div className="rf-brand">RANGEFINDER</div>
+        <div className="rf-hint" style={{ textAlign: 'center', maxWidth: 420 }}>
           {mode.message ?? 'Something went wrong loading today’s challenge.'}
         </div>
       </div>
@@ -199,16 +203,22 @@ export const App = () => {
   }
 
   const header = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <div className="rf-wordmark">
-        Rangefinder<span className="rf-dot">·</span>
-      </div>
-    </div>
+    <header className="rf-nameplate">
+      <span className="rf-brand">RANGEFINDER</span>
+      <span className="rf-rule" aria-hidden="true" />
+      <span className="rf-meta">
+        {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
+      </span>
+    </header>
   );
 
   if (mode.phase === 'result' && mode.result) {
     return (
       <div className="rf-app">
+        <span className="rf-screw tl" aria-hidden="true" />
+        <span className="rf-screw tr" aria-hidden="true" />
+        <span className="rf-screw bl" aria-hidden="true" />
+        <span className="rf-screw br" aria-hidden="true" />
         {header}
         <ResultReveal
           challenge={mode.challenge}
@@ -225,6 +235,10 @@ export const App = () => {
 
   return (
     <div className="rf-app">
+      <span className="rf-screw tl" aria-hidden="true" />
+      <span className="rf-screw tr" aria-hidden="true" />
+      <span className="rf-screw bl" aria-hidden="true" />
+      <span className="rf-screw br" aria-hidden="true" />
       {header}
       <ChallengeCard
         challenge={mode.challenge}
@@ -244,7 +258,7 @@ export const App = () => {
       ) : null}
       <button
         className="rf-btn"
-        style={{ marginTop: 'auto' }}
+        style={{ marginTop: 'auto', width: '100%' }}
         disabled={mode.phase === 'submitting'}
         onClick={() => void submit()}
       >

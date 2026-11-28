@@ -1,79 +1,92 @@
-# Rangefinder Design System — v2 "Prediction Arcade"
+# Rangefinder Design System — v3 “The Instrument” (Stage 3.6 approved blend)
 
-Stage 3.5 · 2026-11-27 · Supersedes the v1 "Orbital Field Instrument" (dark) system from Stage 3.4.
-Scope: visual/interaction redesign only — scoring, APIs, persistence, and all behaviour contracts unchanged.
+Status: APPROVED by user (blend verdict). Dominant language: Direction A
+(“The Instrument”). Borrowed: B’s pin-drop + postmark discovery reveal;
+C’s dimension lines / crosshair annotations inside challenge-specific artwork.
+This replaces the v2 “Prediction Arcade” spec. Implementation = CSS + inline
+SVG only; zero new dependencies; no WebGL; no bitmap assets; webfonts none
+(Georgia/system stacks).
 
-## 0. Why the change
+## 1. Identity
 
-The Stage 3.4 dark instrument read as a scientific dashboard: the decorative sphere dominated,
-the actual estimation controls were small, and large empty dark areas wasted the narrow Reddit
-canvas. Player-facing screenshots also showed nested-scroll and horizontal-overflow problems.
-v2 flips the hierarchy: **the question is the hero, the slider is the main event, colour does
-the storytelling** — and the layout is engineered against overflow.
+Rangefinder **is** a precision surveying instrument. The player operates a
+physical measuring device, then documents a discovery.
 
-## 1. Reference analysis (Stage 3.5 set: images 9–14)
+- Surfaces: warm ivory-enamel housing (`#e9e3d1`, hi `#f2eddd`, deep `#dbd3bd`),
+  porcelain readout windows (`#f8f4e4`), deep ink line-work (`#191c17`).
+- Metal: polished brass (`#a67c2c`, hi `#dfb867`, edge `#4d3a12`) — every
+  interactive control is a brass object with hard shadow “weight”.
+- Signal colours, restrained: amber measurement window (`#f4bd58→#c8891f`);
+  vermilion indicator red (`#c03a26`) for misses/penalties/truth pointer only.
+  Caught verdicts stamp in deep brass ink (`#7c5a1c`).
+- Dark is never a void: dark surfaces are dense, ticked measuring-drum faces.
+- Shading models material only (gradients as machining), never decoration.
+  No glass, no glow-as-decoration, no confetti garnish, no callout stems.
 
-### 1.1 Adapted
+## 2. Type & numerals
 
-- **9 · Brainbox (lemon pop-editorial):** flat bright canvas, chunky display type with hard
-  offset shadows, white chips with solid offset shadows, confetti micro-shapes, numbered meta
-  ("Quiz 1/3" → our "Round 01"). Energetic but flat — no gradients needed.
-- **10 · WeTransfer Ideas Report:** editorial data-journalism — serif display headline, outlined
-  proportional shapes as data visualisation, pill labels on stems, tracked uppercase kickers,
-  italic source line. Confidence through flat colour + ink outlines.
-- **11 · quiz cards:** white tiles with coloured top notches; clear game framing without clutter.
-- **12 · Earth + Science magazine:** cream paper, chunky slab/mono display type, flat vector
-  illustration with **magnifying-callout stems**, numbered lists, two-accent discipline on
-  paper. This is the closest spiritual match: an editorial science magazine that plays.
-- **13 · two-thumbs slider:** large circular outlined thumbs, dimmed regions outside the
-  selection, numeric "30 – 65" readout, generous hit areas. Exactly our control language.
-- **14 · arcade result cards:** fanned cards with thick outlines + hard shadows, oversized
-  numerals, sticker-like verdict badge ("Almost there!"). The reveal's energy source.
+- Engraved serif caps (Georgia, letter-spaced) for brand + actions.
+- Serif for the question (hero on splash, 21–22px on game).
+- System sans, 9.5–11px, 0.2–0.34em tracking for kickers/labels.
+- All numerals: tabular (ui-monospace/Consolas for readouts).
 
-### 1.2 Excluded
+## 3. Layout guardrails (embedded-first, ~719×545 verified in mockups)
 
-Cartoon mascots/licensed characters (9, 11); full-bleed saturated purple/blue gradient backdrops
-(11); dense multi-panel dashboards; neon-on-dark; anything photographic or 3D-rendered.
+- `.rf-app` = flex column, `min-height:100%`, `overflow:hidden`, inset hairline
+  border + 4 corner screws; **Reddit owns scrolling** — no height:100% chains,
+  no nested scroll containers, no horizontal overflow.
+- Splash budget ≈ 500px of 545: nameplate 26 / kick+question ~92 / plate 232 /
+  CTA 56 / fine 40 / foot 16. The artwork scales with width (`width:100%`,
+  viewBox 560×236) so narrow mobile shortens it automatically.
+- Game budget ≈ 476px: header 82 / counters 84 / drum zone 120 / ruler+howto 70 /
+  lock 64. Controls ≈ 65% of the frame. No illustration on the game screen.
+- Decorative overflow (protruding thumbs, dropped bezel) lives on absolutely
+  positioned children with explicit headroom margins — never negative-offset
+  page decoration.
 
-### 1.3 Synthesis — "Prediction Arcade"
+## 4. Components
 
-A **warm ivory science-magazine page that plays like an arcade**: the question set like an
-editorial headline with a flat outlined Earth illustration and callout stems; the prediction
-slider as a big ink-outlined instrument with lime selection; results as a stamped, fanned-card
-moment with a count-up score. Ink outlines + hard offset shadows give tactility without
-glassmorphism; colour is strictly role-based.
+- **InstrumentPlate** (splash only): dimensional Earth being measured — shaded
+  sphere, engraved latitudes/landmasses, brass measuring band around the
+  equator (back arc dashed, front arc solid with stitching), free tape end with
+  “?” plate, and a C-style drafting dimension line with arrows labelled
+  “C = ?” (earth variant) / “?” (generic fallback). Variant selected from the
+  real challenge prompt (`/earth|circumference|equator/i`). No callout labels.
+- **RangeDial** (game): the measuring drum — 76px rail, ink border, fine 9px
+  tick texture + 5 decade marks, hatched dim segments outside the selection,
+  amber window between the handles; 56×108px knurled brass thumbs protruding
+  above/below with press-travel (active) and focus ring. Two invisible native
+  range inputs remain the interactive surface (`touch-action: pan-y`);
+  TICKS_PER_DECADE=100, log↔tick math, lower≤upper−1 / upper≥lower+1 clamps
+  and `aria-valuetext` preserved exactly from 3.4/3.5.
+- **Odometer counters** (game, above drum): two porcelain windows joined by
+  brass rivets; LOWER/UPPER physical values (aria-live polite). Values roll on
+  every drag — reading the instrument, not filling a form.
+- **Lock** = full-width brass lever, 64px, 6px press travel, letterspaced
+  “LOCK ESTIMATE”; loading spinner preserved.
+- **Reveal** (documenting a discovery): same drum skin replays the player’s
+  band with porcelain edge markers; the truth drops in as a **brass-bezel
+  gauge pin** with a two-ring sonar ping and a chip “TRUE · <label> <unit>”;
+  misses add a hatched vermilion bracket from the nearest edge with an
+  “×N.NN OVER” chip. Verdict = rotated circular **postmark** (CAUGHT/MISSED ·
+  IN/OUT OF RANGE · date) slamming in with overshoot. Score story: SVG
+  **needle gauge** sweeps (negative scores pin at 0 and are flagged), while an
+  odometer numeral counts up and settles **exactly** on the server’s S
+  (reduced-motion: exact immediately). Then serif answer line, sourced
+  explanation, source link. `data-caught` drives colour variants.
+- Restored submissions show a small “RESTORED READING” chip; never re-stamp.
 
-## 2. Tokens
+## 5. Motion inventory (all `prefers-reduced-motion`-gated)
 
-| Token | Value | Role |
-|---|---|---|
-| `--rf-paper` | `#f6f1e6` | Warm ivory page |
-| `--rf-card` | `#fffdf7` | Card/panel fill |
-| `--rf-ink` | `#141a24` | Primary text + outlines |
-| `--rf-ink-2` | `#4c5563` | Secondary text |
-| `--rf-cobalt` | `#2547f4` | Primary action / focus / caught |
-| `--rf-lime` | `#a8e10c` | Selected range / positive |
-| `--rf-coral` | `#f0604d` | Miss / warning / truth-when-missed |
-| `--rf-line` | `#141a24` (1.5px) | Outlines |
-| Shadow | `4px 4px 0 rgba(20,26,36,0.9)` | Hard offset shadow (buttons/cards) |
-| Radius | 12 / 18 px | Controls / cards |
-| Type | Georgia/serif display · system sans UI · `ui-monospace` tabular numerals | Editorial voice / controls / values |
+entrance: panels rise 12px/240ms · drag: thumb press 3px, window+counters
+instant · lock: 6px travel + spinner · reveal: postmark stamp-in 500ms,
+truth drop 700ms (overshoot), ping rings 2×1.2s, bracket hatch fade,
+needle sweep 1.4s ease-out, score count ~900ms → exact value.
+Count-up/count-display never alters authoritative data.
 
-Legacy `--rf-*` aliases retained so untouched inline styles keep working.
+## 6. Adaptive-from references (9–14) — recap
 
-## 3. Layout guardrails (the overflow fixes)
-
-- No `height:100%` chains; the app is `min-height:100%` and **Reddit owns scrolling** — no
-  nested scroll containers, no fixed-height panels.
-- Decorative garnish lives in a single `position:absolute; inset:0; overflow:hidden` layer
-  inside `.rf-app` (which is `overflow:clip`) — **no negative-offset decorations** (the old
-  cause of horizontal scroll).
-- Everything is percentage/`clamp()` sized; the slider is `width:100%`; buttons are ≥48px tall
-  with ≥44px thumbs; `touch-action: pan-y` keeps Reddit's vertical scroll native.
-
-## 4. Motion
-
-Entrance rise (200 ms) · knob drag = instant values + lime fill (no lag) · lock = controls
-freeze + button press · reveal = truth marker drops with a stamp-blink (450 ms), distance
-bracket draws, score **counts up ~700 ms** and settles on the exact server value ·
-`prefers-reduced-motion`: no animations, score shows the exact value immediately. No sound.
+A instrument mock (approved direction), B tape/pin/postmark (reveal borrowing),
+C cyanotype dimension notation (splash artwork annotation only). Rejected
+globally: dark voids, dashboard chrome, generic quiz cards, gradient/glass
+decoration, decorative 3D/WebGL, tiny technical labels as the main language.

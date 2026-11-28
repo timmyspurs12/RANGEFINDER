@@ -7,7 +7,7 @@ type RangeDialProps = {
   /** Current lower/upper bounds in log10 space. */
   l: number;
   u: number;
-  /** Whether input is disabled (e.g. after locking). */
+  /** Whether input is disabled (e.g. while submitting). */
   disabled: boolean;
   onChange: (l: number, u: number) => void;
 };
@@ -18,15 +18,12 @@ const logToTick = (v: number, a: number): number => Math.round((v - a) * TICKS_P
 const tickToLog = (t: number, a: number): number => a + t / TICKS_PER_DECADE;
 
 /**
- * THE main interactive component (Stage 3.5): a large ink-outlined dual-thumb
- * slider — 64px tall control, 40px visual thumbs (44px hit area), acid-lime
- * selection fill, hatched dimmed segments outside the selection.
- *
- * Two native <input type="range"> elements remain the interactive surface
- * (touch, mouse, keyboard arrow keys) stacked invisibly over the visuals,
- * which mirror state. Handles are clamped so the lower bound stays strictly
- * below the upper bound; the smallest selectable gap is one tick (0.01
- * decades). `touch-action: pan-y` keeps Reddit's vertical scroll native.
+ * Stage 3.6: the measuring drum. Same native-input pair, clamp logic and
+ * log-space math as Stage 3.4/3.5 — new instrument visuals: a dark ticked
+ * drum face, amber measurement window, and two protruding knurled brass
+ * thumbs (56×108px) with press travel and a visible focus ring. The
+ * invisible inputs keep `touch-action: pan-y` so Reddit's vertical scroll
+ * stays native; the lower thumb wins pointer conflicts while dragging.
  */
 export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) => {
   const totalTicks = useMemo(() => Math.round((b - a) * TICKS_PER_DECADE), [a, b]);
@@ -35,7 +32,8 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
 
   const lowerTick = logToTick(l, a);
   const upperTick = logToTick(u, a);
-  const pct = (t: number): number => (t / totalTicks) * 100;
+  const span = b - a;
+  const pct = (v: number): number => ((v - a) / span) * 100;
 
   const onLower = useCallback(
     (tick: number) => {
@@ -56,32 +54,24 @@ export const RangeDial = ({ a, b, l, u, disabled, onChange }: RangeDialProps) =>
   const thumbCls = (which: 'lower' | 'upper'): string => {
     const isActive = active === which;
     const isFocused = focused === which;
-    return `rfd-thumb rfd-knob-${which}${isActive ? ' is-active' : ''}${isFocused ? ' is-focused' : ''}`;
+    return `rfd-thumb${isActive ? ' is-active' : ''}${isFocused ? ' is-focused' : ''}`;
   };
+
+  const decades: number[] = [];
+  for (let t = Math.ceil(a); t <= Math.floor(b); t++) decades.push(t);
 
   return (
     <div className={`rfd${disabled ? ' rfd-locked' : ''}`}>
-      <div className="rfd-rail" aria-hidden="true">
-        <div className="rfd-dim rfd-dim-left" style={{ width: `${pct(lowerTick)}%` }} />
-        <div
-          className="rfd-fill"
-          style={{ left: `${pct(lowerTick)}%`, width: `${pct(upperTick - lowerTick)}%` }}
-        />
-        <div
-          className="rfd-dim rfd-dim-right"
-          style={{ width: `${100 - pct(upperTick)}%` }}
-        />
+      <div className="rf-rail" aria-hidden="true">
+        <div className="rf-dim" style={{ left: 0, width: `${pct(l)}%` }} />
+        <div className="rf-window" style={{ left: `${pct(l)}%`, width: `${pct(u) - pct(l)}%` }} />
+        <div className="rf-dim" style={{ left: `${pct(u)}%`, right: 0 }} />
+        {decades.map((t) => (
+          <span key={t} className="rf-decmark" style={{ left: `${pct(t)}%` }} />
+        ))}
       </div>
-      <span
-        aria-hidden="true"
-        className={thumbCls('lower')}
-        style={{ left: `${pct(lowerTick)}%` }}
-      />
-      <span
-        aria-hidden="true"
-        className={thumbCls('upper')}
-        style={{ left: `${pct(upperTick)}%` }}
-      />
+      <span aria-hidden="true" className={thumbCls('lower')} style={{ left: `${pct(l)}%` }} />
+      <span aria-hidden="true" className={thumbCls('upper')} style={{ left: `${pct(u)}%` }} />
       <input
         className="rfd-input"
         type="range"
