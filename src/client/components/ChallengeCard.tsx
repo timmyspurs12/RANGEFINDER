@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { formatQuantity } from '../../shared/api';
 import type { ChallengePublic } from '../../shared/api';
-import { formatUtcDayLabel } from '../../shared/dayKey';
 import {
   caughtScorePreview,
   formatPreviewPoints,
@@ -94,7 +93,6 @@ export const ChallengeCard = ({ challenge, l, u, disabled, onChange }: Challenge
           </p>
           <h2 className="rf-q">{challenge.prompt}</h2>
         </div>
-        <span className="rf-date">{formatUtcDayLabel()}</span>
       </header>
 
       <div className="rf-counters" aria-hidden="false">

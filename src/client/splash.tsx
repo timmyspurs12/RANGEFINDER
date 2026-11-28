@@ -39,6 +39,15 @@ export const Splash = () => {
 
   const today = formatUtcDayLabel();
   const prompt = challenge?.prompt ?? 'How close can you get to the truth?';
+  // The Devvit context is only populated inside the Reddit WebView; degrade
+  // gracefully (no personalization, generic footnote) wherever it is absent.
+  const username: string | null = (() => {
+    try {
+      return context?.username ?? null;
+    } catch {
+      return null;
+    }
+  })();
 
   return (
     <div className="rf-app rf-splash rf-splash-t">
@@ -50,7 +59,10 @@ export const Splash = () => {
       <header className="rf-nameplate">
         <span className="rf-brand">RANGEFINDER</span>
         <span className="rf-rule" aria-hidden="true" />
-        <span className="rf-meta">DAILY SURVEY · {today}</span>
+        <span className="rf-meta">
+          <span className="rf-meta-full">DAILY SURVEY · {today}</span>
+          <span className="rf-meta-short">{today}</span>
+        </span>
       </header>
 
       <span className="rf-kick">
@@ -73,7 +85,7 @@ export const Splash = () => {
           START MEASURING
         </button>
         <div className="rf-footnote">
-          {context.username ? `Sighting in as ${context.username}` : 'You’re about to make an estimate'}
+          {username ? `Sighting in as ${username}` : 'You’re about to make an estimate'}
         </div>
       </div>
     </div>

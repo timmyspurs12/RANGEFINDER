@@ -324,7 +324,7 @@ export const App = () => {
         ) : armed ? (
           '▸▸ Tap again to confirm'
         ) : mode.phase === 'ready' ? (
-          'Hold to lock · or tap twice'
+          'Hold to lock'
         ) : (
           'Lock estimate'
         )}
