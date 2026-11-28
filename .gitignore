@@ -7,3 +7,5 @@ tmp/
 
 # Release artifacts (distributed via session file viewer, not committed)
 artifacts/
+# .gitignore additions
+preview-dist/

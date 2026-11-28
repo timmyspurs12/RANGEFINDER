@@ -1,0 +1,84 @@
+/**
+ * Rangefinder v4 — design tokens.
+ * Cartographer's survey aesthetic: warm paper, ink, brass, one vermilion
+ * accent. Light/dark via [data-theme] (defaults follow the system).
+ */
+
+:root {
+  /* surfaces */
+  --paper: #f1e9d4;
+  --paper-deep: #e6dcc0;
+  --card: #f9f4e6;
+  --well: #171812; /* dark measuring well */
+  --well-hi: #23241b;
+  --well-line: rgba(247, 242, 224, 0.16);
+
+  /* ink */
+  --ink: #221d12;
+  --ink-soft: rgba(34, 29, 18, 0.64);
+  --ink-faint: rgba(34, 29, 18, 0.38);
+  --hair: rgba(34, 29, 18, 0.22);
+
+  /* brass */
+  --brass: #a97c2e;
+  --brass-hi: #dfb867;
+  --brass-deep: #7c5a1c;
+  --brass-line: #4d3a12;
+  --brass-grad: linear-gradient(180deg, #dfb867, #b08432 55%, #93691f);
+
+  /* vermilion — the single tension accent */
+  --verm: #c8401f;
+  --verm-hi: #e4573f;
+  --verm-soft: rgba(200, 64, 31, 0.12);
+
+  /* feedback */
+  --win: #4d7c2a;
+  --win-soft: rgba(77, 124, 42, 0.14);
+
+  /* type */
+  --serif: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, Menlo, monospace;
+
+  /* geometry */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --pad: 18px;
+  --maxw: 480px;
+
+  /* grain */
+  --grain-opacity: 0.05;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --paper: #15140e;
+  --paper-deep: #100f0a;
+  --card: #1e1c14;
+  --well: #0c0b08;
+  --well-hi: #191811;
+  --well-line: rgba(247, 242, 224, 0.14);
+
+  --ink: #ece4cb;
+  --ink-soft: rgba(236, 228, 203, 0.66);
+  --ink-faint: rgba(236, 228, 203, 0.4);
+  --hair: rgba(236, 228, 203, 0.22);
+
+  --brass: #c9973a;
+  --brass-hi: #eac97e;
+  --brass-deep: #e0b75f;
+  --brass-line: #6b5218;
+  --brass-grad: linear-gradient(180deg, #eac97e, #c9973a 55%, #9d7426);
+
+  --verm: #e4573f;
+  --verm-hi: #f07a5e;
+  --verm-soft: rgba(228, 87, 63, 0.16);
+
+  --win: #8bb555;
+  --win-soft: rgba(139, 181, 85, 0.16);
+
+  --grain-opacity: 0.07;
+
+  color-scheme: dark;
+}

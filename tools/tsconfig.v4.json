@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../dist/types/v4",
+    "tsBuildInfoFile": "../dist/types/v4/tsconfig.tsbuildinfo",
+    "types": ["node"],
+    "rootDir": "../src",
+    "allowImportingTsExtensions": true,
+    "emitDeclarationOnly": true
+  },
+  "include": ["../src/game/**/*", "../src/ui/**/*", "../src/preview/**/*"],
+  "exclude": []
+}
