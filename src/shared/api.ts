@@ -33,6 +33,12 @@ export type StateResponse = {
   submitted: boolean;
   result: ScoreRecord | null;
   draft: { l: number; u: number } | null;
+  /**
+   * Stage 3.7 — REAL community stats only (daily accepted submissions and,
+   * once ≥10 exist, the caller's percentile). Omitted on read failure;
+   * percentile is null below the visibility threshold.
+   */
+  daily?: { players: number; percentile: number | null };
 };
 
 export type DraftRequest = {
@@ -56,6 +62,8 @@ export type SubmitResponse = {
   type: 'submit';
   result: ScoreRecord;
   alreadySubmitted: boolean;
+  /** Real community stats, refreshed after this submission (may be absent). */
+  daily?: { players: number; percentile: number | null };
 };
 
 export type ErrorResponse = {

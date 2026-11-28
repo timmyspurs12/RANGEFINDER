@@ -14,6 +14,7 @@ import type { ChallengeDef } from '../challenge';
 import { validateInterval } from '../scoring';
 import { buildRecord } from '../record';
 import {
+  getDailyStats,
   getDraft,
   getSubmission,
   saveDraft,
@@ -78,6 +79,17 @@ api.get('/state', async (c) => {
     }
   }
 
+  // Stage 3.7 — real community stats only; a stats read failure must never
+  // break the state endpoint, so the field is simply omitted on failure.
+  let daily: StateResponse['daily'];
+  if (loggedIn && userId) {
+    try {
+      daily = await getDailyStats(redis, challenge.id, userId);
+    } catch (error) {
+      console.warn(`Daily stats read failed for post ${postId}:`, error);
+    }
+  }
+
   return c.json<StateResponse>({
     type: 'state',
     challenge: toPublic(challenge),
@@ -85,6 +97,7 @@ api.get('/state', async (c) => {
     submitted: result !== null,
     result,
     draft,
+    daily,
   });
 });
 
@@ -122,6 +135,22 @@ api.post('/draft', async (c) => {
   }
 });
 
+/**
+ * Daily stats for submit responses — best effort only; a stats failure never
+ * fails the submission itself (field is omitted instead).
+ */
+async function dailyStatsSafe(
+  challengeId: string,
+  userId: string
+): Promise<{ players: number; percentile: number | null } | undefined> {
+  try {
+    return await getDailyStats(redis, challengeId, userId);
+  } catch (error) {
+    console.warn('Daily stats read failed after submit:', error);
+    return undefined;
+  }
+}
+
 api.post('/submit', async (c) => {
   const { postId, userId } = context;
   if (!postId) {
@@ -150,7 +179,12 @@ api.post('/submit', async (c) => {
   try {
     const prior = await getSubmission(redis, challenge.id, userId);
     if (prior) {
-      return c.json<SubmitResponse>({ type: 'submit', result: prior, alreadySubmitted: true });
+      return c.json<SubmitResponse>({
+        type: 'submit',
+        result: prior,
+        alreadySubmitted: true,
+        daily: await dailyStatsSafe(challenge.id, userId),
+      });
     }
 
     const record = buildRecord(challenge, v.l, v.u, Date.now());
@@ -160,6 +194,7 @@ api.post('/submit', async (c) => {
         type: 'submit',
         result: outcome.record,
         alreadySubmitted: true,
+        daily: await dailyStatsSafe(challenge.id, userId),
       });
     }
     if (outcome.status === 'aborted') {
@@ -168,7 +203,12 @@ api.post('/submit', async (c) => {
         503
       );
     }
-    return c.json<SubmitResponse>({ type: 'submit', result: outcome.record, alreadySubmitted: false });
+    return c.json<SubmitResponse>({
+      type: 'submit',
+      result: outcome.record,
+      alreadySubmitted: false,
+      daily: await dailyStatsSafe(challenge.id, userId),
+    });
   } catch (error) {
     console.error(`Submit failed for post ${postId}:`, error);
     return c.json<ErrorResponse>(

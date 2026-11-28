@@ -10,6 +10,9 @@
 //   already-accepted record instead of scoring again.
 // - Drafts are temporary (48 h TTL) and never touch aggregate state.
 
+import { MIN_SUBMISSIONS_FOR_PERCENTILE } from '../shared/community.ts';
+import { percentileFromRank } from '../shared/community.ts';
+
 export const DRAFT_TTL_SECONDS = 48 * 3600; // 48 h
 export const CHALLENGE_TTL_SECONDS = 35 * 24 * 3600; // 35 d
 
@@ -21,6 +24,17 @@ export function doneKey(challengeId: string, userId: string): string {
 }
 export function subsKey(challengeId: string): string {
   return `challenge:${challengeId}:subs`;
+}
+
+/**
+ * Stage 3.7 daily-scores sorted set: member = userId, score = the exact
+ * server S. Keyed by challenge (== the day's challenge in this slice), so
+ * erase and TTL behave like every other per-challenge key. Written ONLY
+ * inside the atomic finalize transaction — retries and duplicates can never
+ * double count.
+ */
+export function scoresKey(challengeId: string): string {
+  return `challenge:${challengeId}:scores`;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,6 +53,13 @@ export interface RfTx {
   del(key: string): Promise<unknown>;
   expire(key: string, seconds: number): Promise<unknown>;
   hSet(key: string, value: Record<string, string>): Promise<unknown>;
+  /**
+   * Sorted-set add (production TxClient). Optional in this structural
+   * interface because the @devvit/test RedisMock does not model zsets —
+   * call sites use `tx.zAdd?.(...)` so the harness keeps exercising the
+   * finalize logic while production always writes the daily score atomically.
+   */
+  zAdd?(key: string, ...members: { member: string; score: number }[]): Promise<unknown>;
   multi(): Promise<unknown>;
   /**
    * Resolves with the exec results — always a non-empty array when commands
@@ -59,6 +80,13 @@ export interface RfRedisClient {
   hDel(key: string, fields: string[]): Promise<unknown>;
   hGetAll(key: string): Promise<Record<string, string>>;
   watch(key: string): Promise<RfTx>;
+  zRem?(key: string, members: string[]): Promise<unknown>;
+}
+
+/** Narrow read surface for daily stats (production client satisfies it). */
+export interface DailyStatsClient {
+  zCard(key: string): Promise<number | unknown>;
+  zRank(key: string, member: string): Promise<number | null | undefined | unknown>;
 }
 
 export type SubmissionRecordJson = {
@@ -161,6 +189,13 @@ export async function submitEstimate(
     await tx.hSet(subs, { [userId]: JSON.stringify(record) });
     await tx.expire(subs, CHALLENGE_TTL_SECONDS);
     await tx.del(draft);
+    // Daily community stats: written in the SAME atomic transaction as the
+    // acceptance, so it happens exactly once per user's first accepted
+    // submission — retries, replays and duplicates never touch it.
+    if (tx.zAdd) {
+      await tx.zAdd(scoresKey(challengeId), { member: userId, score: record.S });
+      await tx.expire(scoresKey(challengeId), CHALLENGE_TTL_SECONDS);
+    }
     let execResult: unknown;
     try {
       execResult = await tx.exec();
@@ -207,4 +242,33 @@ export async function eraseUser(
   await client.del(draftKey(challengeId, userId));
   await client.del(doneKey(challengeId, userId));
   await client.hDel(subsKey(challengeId), [userId]);
+  // Keep community stats honest after a self-service erase.
+  await client.zRem?.(scoresKey(challengeId), [userId]);
+}
+
+/**
+ * Daily player count + the caller's score percentile, computed from the real
+ * sorted set (written once per accepted submission). Percentile is null until
+ * MIN_SUBMISSIONS_FOR_PERCENTILE real submissions exist. Read failures must
+ * never break /api/state — callers wrap this in try/catch and omit the field.
+ */
+export async function getDailyStats(
+  client: DailyStatsClient,
+  challengeId: string,
+  userId: string
+): Promise<{ players: number; percentile: number | null }> {
+  const key = scoresKey(challengeId);
+  const card = await client.zCard(key);
+  const players = typeof card === 'number' ? card : Number(card);
+  if (!Number.isFinite(players) || players <= 0) {
+    return { players: 0, percentile: null };
+  }
+  if (players < MIN_SUBMISSIONS_FOR_PERCENTILE) {
+    return { players, percentile: null };
+  }
+  const rank = await client.zRank(key, userId);
+  if (typeof rank !== 'number' || !Number.isFinite(rank)) {
+    return { players, percentile: null }; // not submitted yet, or read hiccup
+  }
+  return { players, percentile: percentileFromRank(rank, players) };
 }

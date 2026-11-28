@@ -12,6 +12,7 @@ import type {
 } from '../shared/api';
 import { formatUtcDayLabel } from '../shared/dayKey';
 import { ChallengeCard } from './components/ChallengeCard';
+import { ShareSheet } from './components/ShareSheet';
 import { ResultReveal } from './components/ResultReveal';
 
 type Phase = 'loading' | 'error' | 'ready' | 'submitting' | 'result' | 'failed';
@@ -75,6 +76,7 @@ export const App = () => {
           u: restored.u,
           message: null,
         });
+        setDaily(data.daily);
       } catch (err) {
         console.error('Failed to load state', err);
         setMode((prev) => ({
@@ -154,6 +156,7 @@ export const App = () => {
         data = await doSubmit();
       }
       dirtyRef.current = false;
+      if (data.daily) setDaily(data.daily); // refreshed stats incl. own percentile
       setMode((prev) => ({
         ...prev,
         phase: 'result',
@@ -176,6 +179,8 @@ export const App = () => {
   }, [mode.challenge, mode.l, mode.u]);
   // Two-stage lock: a short press arms ("tap again to confirm"), a sustained
   // ~550 ms hold locks immediately. Prevents accidental submissions.
+  const [daily, setDaily] = useState<StateResponse['daily']>(undefined);
+  const [shareOpen, setShareOpen] = useState(false);
   const [armed, setArmed] = useState(false);
   const holdTimer = useRef<number | null>(null);
   const armTimer = useRef<number | null>(null);
@@ -263,11 +268,21 @@ export const App = () => {
           challenge={mode.challenge}
           result={mode.result}
           alreadySubmitted={mode.alreadySubmitted}
+          daily={daily}
+          onShare={() => setShareOpen(true)}
         />
         <div className="rf-hint" style={{ textAlign: 'center' }}>
           New challenges daily. Discuss the answer in the comments — no spoilers for late players,
           please.
         </div>
+        {shareOpen ? (
+          <ShareSheet
+            challenge={mode.challenge}
+            result={mode.result}
+            daily={daily}
+            onClose={() => setShareOpen(false)}
+          />
+        ) : null}
       </div>
     );
   }

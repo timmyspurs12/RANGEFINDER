@@ -12,6 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getDailyStats,
   getDraft,
   getSubmission,
   saveDraft,
@@ -19,6 +20,7 @@ import {
   eraseUser,
   draftKey,
   doneKey,
+  scoresKey,
   subsKey,
 } from './store.ts';
 import type { RfRedisClient, RfTx, SubmissionRecordJson } from './store.ts';
@@ -37,6 +39,8 @@ class MockRedis implements RfRedisClient {
   execGates: Array<Promise<void>> = [];
   /** Operation log for asserting interleavings (watch/get/exec markers). */
   log: string[] = [];
+  /** The most recent transaction's queued ops (shared array object with exec). */
+  protected lastTxQueue: Array<() => void> | null = null;
 
   async get(key: string): Promise<string | undefined> {
     this.log.push(`get ${key}`);
@@ -83,6 +87,7 @@ class MockRedis implements RfRedisClient {
     const self = this; // eslint-disable-line @typescript-eslint/no-this-alias -- closure capture for exec abort check
     const snapshot = self.strings.get(key);
     const queue: Array<() => void> = [];
+    this.lastTxQueue = queue;
     const tx: RfTx = {
       async get(k: string) {
         return self.strings.get(k);
@@ -420,4 +425,145 @@ test('audit: erase followed by a fresh submission works (user can play again)', 
   assert.deepEqual(await getSubmission(db, CH, 't2_fresh'), rec2);
   const subs = await db.hGetAll(subsKey(CH));
   assert.equal(Object.keys(subs).length, 1);
+});
+
+// ---- Stage 3.7 Round 2: daily-scores sorted set ---------------------------
+// Same honest scope as above: mock semantics, not live Redis. The base
+// MockRedis deliberately has NO zset support — every existing test passing
+// against it is itself the proof that the store degrades gracefully when the
+// client cannot write sorted sets (e.g. the @devvit/test RedisMock).
+
+/** MockRedis + a faithful ZADD/ZREM/ZCARD/ZRANK with exec-abort semantics. */
+class MockRedisWithZSets extends MockRedis {
+  /** key → (member → score); ZADD overwrites, exactly like Redis. */
+  zsets = new Map<string, Map<string, number>>();
+  zAddCalls = 0;
+
+  override async watch(key: string): Promise<RfTx> {
+    const tx = await super.watch(key);
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- same closure capture as the base mock
+    const self = this;
+    const queue = this.lastTxQueue;
+    if (!queue) throw new Error('mock wiring: transaction queue missing');
+    return Object.assign(tx, {
+      async zAdd(k: string, ...members: { member: string; score: number }[]) {
+        self.zAddCalls += members.length;
+        queue.push(() => {
+          let z = self.zsets.get(k);
+          if (!z) {
+            z = new Map();
+            self.zsets.set(k, z);
+          }
+          for (const m of members) z.set(m.member, m.score);
+        });
+        return tx;
+      },
+    });
+  }
+
+  async zRem(key: string, members: string[]): Promise<unknown> {
+    const z = this.zsets.get(key);
+    if (!z) return 0;
+    let removed = 0;
+    for (const m of members) if (z.delete(m)) removed++;
+    return removed;
+  }
+
+  async zCard(key: string): Promise<number> {
+    return this.zsets.get(key)?.size ?? 0;
+  }
+
+  async zRank(key: string, member: string): Promise<number | null> {
+    const z = this.zsets.get(key);
+    if (!z || !z.has(member)) return null;
+    // Ascending by score; ties broken lexicographically (Redis behaviour).
+    const sorted = [...z.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1));
+    return sorted.findIndex(([m]) => m === member);
+  }
+}
+
+const makeRec = (S: number, at: number): SubmissionRecordJson => ({ ...makeRecord(at), S });
+
+test('daily ZSET: first accepted submission writes the score exactly once', async () => {
+  const r = new MockRedisWithZSets();
+  const outcome = await submitEstimate(r, CH, USER, makeRec(75, 1000));
+  assert.equal(outcome.status, 'stored');
+  assert.equal(r.zAddCalls, 1);
+  const z = r.zsets.get(scoresKey(CH));
+  assert.ok(z, 'scores key exists');
+  assert.equal(z.get(USER), 75); // the exact server S, verbatim
+  assert.equal(r.expiries.get(scoresKey(CH)), 35 * 24 * 3600);
+
+  // A duplicate replay must never double count.
+  const replay = await submitEstimate(r, CH, USER, makeRec(99, 9999));
+  assert.equal(replay.status, 'duplicate');
+  assert.equal(r.zAddCalls, 1);
+  assert.equal(await r.zCard(scoresKey(CH)), 1);
+  assert.equal(r.zsets.get(scoresKey(CH))!.get(USER), 75); // original score stands
+});
+
+test('daily ZSET: aborted finalize applies no zAdd — atomic with acceptance', async () => {
+  const r = new MockRedisWithZSets();
+  const tx = await r.watch(doneKey(CH, USER));
+  assert.equal(await tx.get(doneKey(CH, USER)), undefined);
+  // Another request for the SAME user fully commits first.
+  const winner = await submitEstimate(r, CH, USER, makeRec(75, 1000));
+  assert.equal(winner.status, 'stored');
+  // The losing transaction queues a stale zAdd — exec must abort and drop it.
+  await tx.multi();
+  await tx.zAdd?.(scoresKey(CH), { member: USER, score: 1 });
+  await tx.set(doneKey(CH, USER), '9999');
+  await tx.exec();
+  assert.ok(r.log.includes('exec ABORT'), 'loser aborted');
+  assert.equal(await r.zCard(scoresKey(CH)), 1); // only the winner's write
+  assert.equal(r.zsets.get(scoresKey(CH))!.get(USER), 75); // stale score 1 never applied
+});
+
+test('daily ZSET: different users land as separate members with their own scores', async () => {
+  const r = new MockRedisWithZSets();
+  await submitEstimate(r, CH, 't2_a', makeRec(40, 1000));
+  await submitEstimate(r, CH, 't2_b', makeRec(92, 1001));
+  const z = r.zsets.get(scoresKey(CH))!;
+  assert.equal(z.size, 2);
+  assert.equal(z.get('t2_a'), 40);
+  assert.equal(z.get('t2_b'), 92);
+});
+
+test('store finalizes fine without zset support (degradation path)', async () => {
+  const r = new MockRedis(); // base mock: no zAdd/zRem at all
+  const outcome = await submitEstimate(r, CH, USER, makeRecord(1000));
+  assert.equal(outcome.status, 'stored');
+  assert.ok(await getSubmission(r, CH, USER));
+});
+
+test('getDailyStats: count always real; percentile only at ≥10 players', async () => {
+  const r = new MockRedisWithZSets();
+  assert.deepEqual(await getDailyStats(r, CH, USER), { players: 0, percentile: null });
+
+  // Nine other players — below the threshold, percentile stays hidden.
+  for (let i = 0; i < 9; i++) {
+    await submitEstimate(r, CH, `t2_p${i}`, makeRec(10 + i * 10, 1000 + i));
+  }
+  assert.deepEqual(await getDailyStats(r, CH, 't2_p0'), { players: 9, percentile: null });
+
+  // USER's 75 lands as the 10th submission — exactly at the threshold.
+  await submitEstimate(r, CH, USER, makeRec(75, 2000));
+  const stats = await getDailyStats(r, CH, USER);
+  // ascending: 10..90 then 75 → rank 7 of 10
+  assert.equal(stats.players, 10);
+  assert.equal(stats.percentile, Math.round((7 / 10) * 100));
+
+  // Erasing one player drops the count to 9 → hidden again for everyone.
+  await eraseUser(r, CH, 't2_p0');
+  assert.deepEqual(await getDailyStats(r, CH, USER), { players: 9, percentile: null });
+});
+
+test('getDailyStats: caller without a submission gets the count but no percentile', async () => {
+  const r = new MockRedisWithZSets();
+  for (let i = 0; i < 12; i++) {
+    await submitEstimate(r, CH, `t2_q${i}`, makeRec(50 + i, 1000 + i));
+  }
+  const stats = await getDailyStats(r, CH, 't2_nobody');
+  assert.equal(stats.players, 12);
+  assert.equal(stats.percentile, null);
 });

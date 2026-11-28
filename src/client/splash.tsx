@@ -19,6 +19,7 @@ import { InstrumentPlate } from './components/InstrumentPlate';
  */
 export const Splash = () => {
   const [challenge, setChallenge] = useState<ChallengePublic | null>(null);
+  const [players, setPlayers] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -27,7 +28,11 @@ export const Splash = () => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as StateResponse;
         if (data.type !== 'state') throw new Error('Unexpected response');
-        if (alive) setChallenge(data.challenge);
+        if (alive) {
+          setChallenge(data.challenge);
+          // Real daily count only (Stage 3.7) — omitted entirely when absent.
+          if (data.daily && data.daily.players > 0) setPlayers(data.daily.players);
+        }
       })
       .catch(() => {
         /* splash degrades to generic copy; the game screen is authoritative */
@@ -60,7 +65,15 @@ export const Splash = () => {
         <span className="rf-brand">RANGEFINDER</span>
         <span className="rf-rule" aria-hidden="true" />
         <span className="rf-meta">
-          <span className="rf-meta-full">DAILY SURVEY · {today}</span>
+          <span className="rf-meta-full">
+            DAILY SURVEY · {today}
+            {players !== null ? (
+              <>
+                {' '}
+                <span className="rf-meta-nowrap">· {players} SURVEYING</span>
+              </>
+            ) : null}
+          </span>
           <span className="rf-meta-short">{today}</span>
         </span>
       </header>

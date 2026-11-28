@@ -8,7 +8,7 @@
     "build": "vite build",
     "dev": "devvit playtest",
     "typecheck": "tsc --build",
-    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/server/scoring.test.ts src/server/store.test.ts src/server/record.test.ts src/shared/preview.test.ts",
+    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/server/scoring.test.ts src/server/store.test.ts src/server/record.test.ts src/shared/preview.test.ts src/shared/tiers.test.ts",
     "test:spec": "node --test spec/scoring.test.cjs",
     "test": "npm run test:spec && npm run test:unit && npm run test:harness && npm run audit:bundle",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
