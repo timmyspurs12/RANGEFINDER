@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direction A — “The Instrument” · Rangefinder Stage 3.6 review</title>
+<style>
+  :root{
+    --enamel:#e9e3d1; --enamel-d:#dbd3bd; --ink:#191c17; --soft:rgba(25,28,23,.6);
+    --hair:rgba(25,28,23,.28);
+    --brass:#a67c2c; --brass-hi:#dfb867; --brass-line:#4d3a12;
+    --porc:#f8f4e4; --red:#c03a26;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#232327}
+  body{font-family:Georgia,'Times New Roman',serif;color:#dfddd4;padding:30px 18px 90px}
+  .chrome{max-width:719px;margin:0 auto;font-family:Arial,Helvetica,sans-serif}
+  .chrome .bar{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:#b9b7ac;letter-spacing:.14em}
+  .chrome .bar b{color:#f0efe8}
+  .chrome .sub{font-size:12px;color:#8f8d84;margin-top:4px}
+  .modes{display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+  .modes span{font-size:12px;color:#8f8d84;letter-spacing:.08em;margin-right:6px}
+  .modes button{font:600 12px Arial,Helvetica,sans-serif;letter-spacing:.12em;padding:8px 16px;background:#3a3a40;color:#e6e4da;border:1px solid #55555c;border-radius:4px;cursor:pointer}
+  .modes button.on{background:#dfb867;color:#231a06;border-color:#dfb867}
+  .frames{max-width:719px;margin:0 auto;display:flex;flex-direction:column;gap:54px}
+  .device{width:719px;height:545px;overflow:hidden;border-radius:8px;background:#101010;box-shadow:0 30px 70px rgba(0,0,0,.55)}
+  .flabel{display:flex;justify-content:space-between;font:12px Arial,Helvetica,sans-serif;color:#8f8d84;margin:10px 2px 0;letter-spacing:.08em}
+  .notes{max-width:719px;margin:70px auto 0;font:14px/1.65 Arial,Helvetica,sans-serif;color:#c7c5bb}
+  .notes h2{font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.22em;color:#f0efe8;margin:26px 0 10px}
+  .notes ul{margin-left:18px}
+  .notes li{margin:6px 0}
+  .notes .rec{background:#2c2c31;border:1px solid #45454b;border-left:4px solid #dfb867;padding:14px 16px;border-radius:6px;margin-top:18px}
+
+  /* ============ SCREEN SHELL — 719×545 ============ */
+  .screen{width:719px;height:545px;position:relative;color:var(--ink);overflow:hidden;
+    display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#efe9d8 0%,var(--enamel) 28%,var(--enamel) 72%,var(--enamel-d) 100%)}
+  .screen::before{content:"";position:absolute;inset:12px;border:1px solid var(--hair);border-radius:4px;pointer-events:none;z-index:5}
+  .screw{position:absolute;width:9px;height:9px;border:1.2px solid var(--soft);border-radius:50%;z-index:6}
+  .screw::after{content:"";position:absolute;left:1px;right:1px;top:3.6px;height:1.2px;background:var(--soft)}
+  .screw.tl{top:22px;left:22px}.screw.tr{top:22px;right:22px}
+  .screw.bl{bottom:22px;left:22px}.screw.br{bottom:22px;right:22px}
+  .caught-only,.miss-only{display:none!important}
+  [data-mode="caught"] .caught-only{display:revert!important}
+  [data-mode="miss"] .miss-only{display:revert!important}
+
+  /* ============ SPLASH ============ */
+  .np{display:flex;align-items:baseline;gap:14px;margin:30px 36px 0}
+  .np-brand{font-size:15px;letter-spacing:.42em;font-weight:700}
+  .np-line{flex:1;height:5px;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+  .np-meta{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.18em;color:var(--soft)}
+  .sp-head{margin:20px 36px 0;text-align:center}
+  .kick{font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:.34em;color:#7c5a1c;text-transform:uppercase}
+  .q{font-size:35px;line-height:1.14;margin-top:10px;letter-spacing:-.01em}
+  .lens{margin:4px auto 0;height:236px;display:flex;justify-content:center}
+  .sp-foot{margin-top:auto;padding:0 36px 26px;text-align:center}
+  .cta{width:380px;height:58px;border-radius:8px;cursor:pointer;
+    background:linear-gradient(180deg,#dcb35c,#b08432 58%,#93691f);
+    border:1.5px solid var(--brass-line);color:#2a2008;
+    font:700 16px Georgia,serif;letter-spacing:.32em;
+    box-shadow:0 6px 0 var(--brass-line),0 14px 22px rgba(25,28,23,.28)}
+  .cta:active{transform:translateY(4px);box-shadow:0 2px 0 var(--brass-line),0 6px 10px rgba(25,28,23,.22)}
+  .fine{font:12.5px/1.5 Arial,Helvetica,sans-serif;color:var(--soft);margin-top:12px}
+  .fine b{color:var(--ink)}
+
+  /* ============ GAME ============ */
+  .g-top{display:flex;justify-content:space-between;align-items:flex-start;margin:32px 36px 0}
+  .g-kick{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.3em;color:#7c5a1c}
+  .g-q{font-size:22px;line-height:1.2;margin-top:6px}
+  .g-date{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.2em;color:var(--soft);margin-top:4px}
+  .counters{display:flex;margin:22px 36px 0}
+  .counter{flex:1;background:linear-gradient(180deg,#f9f5e5,#efe9d3);border:1.5px solid var(--ink);border-radius:8px;
+    box-shadow:0 3px 0 rgba(25,28,23,.22),inset 0 -10px 16px rgba(25,28,23,.05);
+    padding:12px 18px 10px;display:flex;flex-direction:column;gap:2px}
+  .c-lab{font:700 9.5px Arial,Helvetica,sans-serif;letter-spacing:.28em;color:var(--soft)}
+  .c-val{font-size:31px;font-weight:700;font-variant-numeric:tabular-nums}
+  .c-joint{width:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+  .c-joint span{width:8px;height:8px;border-radius:50%;background:var(--brass);border:1px solid var(--brass-line)}
+  .drum-zone{margin:24px 62px 0;position:relative}
+  .drum{position:relative;height:128px;border-radius:10px;border:1.5px solid #050604;
+    background:
+      repeating-linear-gradient(90deg,rgba(247,242,223,.13) 0 1px,transparent 1px 9px),
+      linear-gradient(180deg,#262920 0%,#14160f 40%,#0e100b 58%,#1c1f16 100%);
+    box-shadow:inset 0 3px 8px rgba(0,0,0,.65),inset 0 -3px 6px rgba(0,0,0,.55),0 4px 0 rgba(25,28,23,.28)}
+  .dec{position:absolute;top:0;bottom:0;width:1.6px;background:rgba(247,242,223,.38)}
+  .band{position:absolute;top:0;bottom:0;left:var(--bl,39.5%);width:var(--bw,5.3%);
+    background:linear-gradient(180deg,#f4bd58,#df9e2e 55%,#c8891f);
+    box-shadow:inset 0 0 0 1.5px rgba(25,28,23,.4),0 0 22px rgba(244,189,88,.28)}
+  .thumb{position:absolute;top:-18px;width:54px;height:164px;margin-left:-27px;border-radius:9px;cursor:grab;touch-action:none;z-index:3;
+    background:linear-gradient(180deg,#e3bd6b 0%,#c39440 38%,#a67c2c 62%,#87621e 100%);
+    border:1.5px solid var(--brass-line);
+    box-shadow:0 5px 0 var(--brass-line),0 12px 18px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,244,214,.6)}
+  .thumb .slot{position:absolute;left:50%;top:14px;transform:translateX(-50%);width:5px;height:24px;background:#3f2f0d;border-radius:2px;box-shadow:0 1px 0 rgba(255,235,190,.5)}
+  .thumb::after{content:"";position:absolute;left:6px;right:6px;bottom:12px;height:36px;border-radius:5px;
+    background:repeating-linear-gradient(90deg,rgba(63,47,13,.4) 0 2px,transparent 2px 7px)}
+  .thumb.drag{cursor:grabbing;transform:translateY(3px);box-shadow:0 2px 0 var(--brass-line),0 6px 10px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,244,214,.6)}
+  .ruler{display:flex;justify-content:space-between;margin-top:12px;font:11px Arial,Helvetica,sans-serif;letter-spacing:.06em;color:var(--soft)}
+  .lock-row{margin:28px 36px 0}
+  .lock{width:100%;height:66px;border-radius:10px;cursor:pointer;
+    background:linear-gradient(180deg,#d9ac54,#b08432 55%,#93691f);
+    border:1.5px solid var(--brass-line);color:#2a2008;
+    font:700 17px Georgia,serif;letter-spacing:.34em;
+    box-shadow:0 6px 0 var(--brass-line),0 14px 22px rgba(25,28,23,.28)}
+  .lock:active{transform:translateY(4px);box-shadow:0 2px 0 var(--brass-line),0 6px 10px rgba(25,28,23,.22)}
+  .howto{margin:14px 36px 0;font:12.5px/1.5 Arial,Helvetica,sans-serif;color:var(--soft);text-align:center}
+
+  /* ============ REVEAL ============ */
+  .r-top{display:flex;justify-content:space-between;align-items:flex-start;margin:32px 36px 0}
+  .r-stamp{display:inline-block;font:700 15px Georgia,serif;letter-spacing:.3em;padding:8px 16px 7px;border:2px solid currentColor;border-radius:4px}
+  [data-mode="caught"] .r-stamp.caught-only{color:#3f6218;background:rgba(63,98,24,.08)}
+  [data-mode="miss"] .r-stamp.miss-only{color:var(--red);background:rgba(192,58,38,.07)}
+  .r-note{display:block;font:italic 13px Georgia,serif;color:var(--soft);margin-top:8px}
+  .r-date{font-family:Arial,Helvetica,sans-serif;font-size:10px;letter-spacing:.18em;color:var(--soft);margin-top:6px}
+  .r-drum-zone{margin:26px 62px 0;position:relative}
+  .r-drum{position:relative;height:124px;border-radius:10px;border:1.5px solid #050604;
+    background:
+      repeating-linear-gradient(90deg,rgba(247,242,223,.13) 0 1px,transparent 1px 9px),
+      linear-gradient(180deg,#262920 0%,#14160f 40%,#0e100b 58%,#1c1f16 100%);
+    box-shadow:inset 0 3px 8px rgba(0,0,0,.65),inset 0 -3px 6px rgba(0,0,0,.55),0 4px 0 rgba(25,28,23,.28)}
+  .r-drum .band{box-shadow:inset 0 0 0 1.5px rgba(25,28,23,.4)}
+  .edge{position:absolute;top:0;bottom:0;width:3px;background:var(--porc);opacity:.9}
+  .bracket{position:absolute;left:var(--gl);width:var(--gw);top:38px;height:50px;border:2px dashed var(--red);border-radius:3px;
+    background:repeating-linear-gradient(135deg,rgba(192,58,38,.14) 0 5px,transparent 5px 10px)}
+  .bracket b{position:absolute;left:50%;top:-24px;transform:translateX(-50%);background:var(--red);color:#fdf6ea;
+    font:700 11px Arial,Helvetica,sans-serif;letter-spacing:.08em;padding:3px 9px;border-radius:3px;white-space:nowrap}
+  .truth{position:absolute;left:var(--tl,40.05%);top:-30px;z-index:4;transform:translateX(-50%)}
+  .truth.play{animation:drop .7s cubic-bezier(.2,.9,.25,1.2) both}
+  @keyframes drop{from{transform:translateX(-50%) translateY(-58px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+  .bezel{position:absolute;left:50%;transform:translateX(-50%);width:34px;height:34px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,var(--porc),#d9d0b4);border:2.5px solid var(--brass);
+    box-shadow:0 3px 7px rgba(0,0,0,.4)}
+  .bezel::after{content:"";position:absolute;left:50%;top:5px;width:3px;height:16px;transform:translateX(-50%);
+    background:var(--red);border-radius:2px}
+  .t-chip{position:absolute;top:40px;left:50%;transform:translateX(-50%);white-space:nowrap;
+    background:var(--porc);border:1.5px solid var(--ink);border-radius:4px;padding:4px 10px;
+    font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.08em;box-shadow:0 3px 6px rgba(0,0,0,.35)}
+  .r-line{margin:16px 36px 0;font:13px Georgia,serif;color:var(--soft);text-align:center}
+  .r-line b{color:var(--ink)}
+  .gauge-zone{display:flex;align-items:center;gap:22px;margin:14px 44px 0}
+  .gauge{width:296px;height:164px;flex:0 0 auto}
+  #needleG{transform:rotate(var(--sc,-90deg));transform-origin:160px 150px;transition:transform 1.5s cubic-bezier(.15,.85,.25,1)}
+  .score-read{display:flex;flex-direction:column;gap:2px}
+  .s-num{font-size:56px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+  [data-mode="miss"] .s-num{color:var(--red)}
+  .s-lab{font:700 10px Arial,Helvetica,sans-serif;letter-spacing:.3em;color:var(--soft);margin-top:6px}
+  .s-sub{font:12px Consolas,Menlo,monospace;color:var(--soft);margin-top:4px}
+  .s-flag{font:italic 12.5px Georgia,serif;color:var(--red);margin-top:6px}
+  .r-foot{margin:auto 36px 24px;display:flex;justify-content:space-between;font:11px Arial,Helvetica,sans-serif;letter-spacing:.14em;color:var(--soft)}
+  .r-foot a{color:var(--ink)}
+</style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="bar"><span><b>DIRECTION A</b> — “THE INSTRUMENT”</span><span>review composition · embedded 719×545</span></div>
+    <div class="sub">Precision surveying instrument in ivory enamel and brass. Estimation screen: drag the brass thumbs. Reveal screen: toggle below.</div>
+    <div class="modes" id="modesA">
+      <span>reveal state:</span>
+      <button type="button" data-m="caught" class="on">CAUGHT (score 94.7)</button>
+      <button type="button" data-m="miss">MISS (score −14.4)</button>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ================= SPLASH ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+        <header class="np">
+          <span class="np-brand">RANGEFINDER</span>
+          <span class="np-line"></span>
+          <span class="np-meta">DAILY SURVEY · THU, NOV 26</span>
+        </header>
+        <div class="sp-head">
+          <p class="kick">Today’s measurement</p>
+          <h1 class="q">What is the circumference<br>of the Earth?</h1>
+        </div>
+        <figure class="lens" aria-hidden="true">
+          <svg width="560" height="236" viewBox="0 0 560 236" fill="none">
+            <defs>
+              <radialGradient id="sphA" cx="0.36" cy="0.3" r="0.95">
+                <stop offset="0" stop-color="#f7f2df"/><stop offset=".62" stop-color="#ddd5ba"/><stop offset="1" stop-color="#b7ad92"/>
+              </radialGradient>
+              <linearGradient id="tapeA" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#dfb867"/><stop offset=".45" stop-color="#b98e37"/><stop offset="1" stop-color="#8a6520"/>
+              </linearGradient>
+            </defs>
+            <ellipse cx="280" cy="222" rx="158" ry="10" fill="rgba(25,28,23,.10)"/>
+            <!-- back half of the measuring band -->
+            <path d="M 162 130 A 118 30 0 0 1 398 130" stroke="#a67c2c" stroke-width="7" opacity=".38" stroke-dasharray="3 5" fill="none"/>
+            <!-- sphere -->
+            <circle cx="280" cy="128" r="94" fill="url(#sphA)" stroke="#191c17" stroke-width="1.6"/>
+            <!-- engraved latitude hairlines -->
+            <path d="M 191 98 A 89 10 0 0 0 369 98" stroke="rgba(25,28,23,.3)" stroke-width="1" fill="none"/>
+            <path d="M 191 98 A 89 10 0 0 1 369 98" stroke="rgba(25,28,23,.15)" stroke-width="1" fill="none"/>
+            <path d="M 192 160 A 88 10 0 0 0 368 160" stroke="rgba(25,28,23,.3)" stroke-width="1" fill="none"/>
+            <!-- engraved landmasses -->
+            <path d="M 236 70 c 26 -10 52 -2 60 14 c 6 14 -8 26 -26 28 c -22 3 -44 -6 -48 -20 c -3 -10 4 -18 14 -22 z" fill="#d5cbae" stroke="#191c17" stroke-width=".9" opacity=".9"/>
+            <path d="M 316 138 c 20 -4 40 4 44 18 c 3 12 -10 22 -28 22 c -18 0 -34 -8 -36 -20 c -2 -10 8 -16 20 -20 z" fill="#cfc4a4" stroke="#191c17" stroke-width=".9" opacity=".9"/>
+            <ellipse cx="258" cy="170" rx="10" ry="5" fill="#cfc4a4" stroke="#191c17" stroke-width=".8"/>
+            <!-- front half of the measuring band -->
+            <path d="M 162 130 A 118 30 0 0 0 398 130" stroke="url(#tapeA)" stroke-width="13" fill="none"/>
+            <path d="M 162 130 A 118 30 0 0 0 398 130" stroke="#f0d596" stroke-width="3" opacity=".55" fill="none" transform="translate(0,-3)"/>
+            <path d="M 162 130 A 118 30 0 0 0 398 130" stroke="#f7f2df" stroke-width="1.4" stroke-dasharray="1.6 7.5" opacity=".8" fill="none"/>
+            <!-- free tape end with index + unknown -->
+            <path d="M 398 130 q 30 12 34 40" stroke="url(#tapeA)" stroke-width="13" fill="none" stroke-linecap="round"/>
+            <path d="M 432 170 l 0 -26" stroke="#c03a26" stroke-width="2.5"/>
+            <path d="M 434 160 L 448 152" stroke="#191c17" stroke-width=".9" opacity=".5"/>
+            <circle cx="466" cy="148" r="17" fill="#f8f4e4" stroke="#191c17" stroke-width="1.5"/>
+            <text x="466" y="155" text-anchor="middle" font-family="Georgia,serif" font-size="18" font-weight="700" fill="#191c17">?</text>
+          </svg>
+        </figure>
+        <div class="sp-foot">
+          <button class="cta" type="button">START MEASURING</button>
+          <p class="fine">You’ll set a range on a log scale — pin the value exactly for <b>100</b>, take the full scale for <b>0</b>, miss and score <b>negative</b>.</p>
+        </div>
+      </div></div>
+      <div class="flabel"><span>1 · SPLASH — the challenge is the hero, the instrument takes the measurement</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= GAME ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+        <header class="g-top">
+          <div>
+            <p class="g-kick">TODAY’S MEASUREMENT · LOG SCALE 10³–10⁷ KM</p>
+            <h2 class="g-q">Earth’s circumference — pin the true value</h2>
+          </div>
+          <span class="g-date">NOV 26</span>
+        </header>
+        <div class="counters">
+          <div class="counter"><span class="c-lab">LOWER BOUND</span><span class="c-val" id="vLow">38,000 km</span></div>
+          <div class="c-joint"><span></span><span></span></div>
+          <div class="counter"><span class="c-lab">UPPER BOUND</span><span class="c-val" id="vUp">62,000 km</span></div>
+        </div>
+        <div class="drum-zone">
+          <div class="drum" id="drum">
+            <span class="dec" style="left:0"></span><span class="dec" style="left:25%"></span>
+            <span class="dec" style="left:50%"></span><span class="dec" style="left:75%"></span>
+            <span class="dec" style="right:0"></span>
+            <div class="band" id="band"></div>
+            <div class="thumb" id="tLow" style="left:39.5%"><i class="slot"></i></div>
+            <div class="thumb" id="tUp" style="left:44.8%"><i class="slot"></i></div>
+          </div>
+          <div class="ruler"><span>10³ km</span><span>10⁴</span><span>10⁵</span><span>10⁶</span><span>10⁷ km</span></div>
+        </div>
+        <div class="lock-row"><button class="lock" type="button">LOCK READING</button></div>
+        <p class="howto">Drag both brass thumbs to set your window · sharper windows score higher · missing the truth scores negative</p>
+      </div></div>
+      <div class="flabel"><span>2 · ESTIMATION — the measuring drum is the game (drag the thumbs)</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= REVEAL ================= -->
+    <div>
+      <div class="device"><div class="screen" id="reveal" data-mode="caught">
+        <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+        <header class="r-top">
+          <div>
+            <span class="r-stamp caught-only">TARGET ACQUIRED</span>
+            <span class="r-stamp miss-only">OFF TARGET</span>
+            <span class="r-note caught-only">the truth sits inside your window</span>
+            <span class="r-note miss-only">the truth sits beyond your upper bound — the penalty ate the whole window</span>
+          </div>
+          <span class="r-date">NOV 26 · LOG SCALE 10³–10⁷ KM</span>
+        </header>
+        <div class="r-drum-zone">
+          <div class="r-drum">
+            <span class="dec" style="left:0"></span><span class="dec" style="left:25%"></span>
+            <span class="dec" style="left:50%"></span><span class="dec" style="left:75%"></span>
+            <span class="dec" style="right:0"></span>
+            <div class="band"></div>
+            <div class="bracket miss-only"><b>×1.60 OVER</b></div>
+            <div class="edge" style="left:var(--bl)"></div>
+            <div class="edge" style="left:calc(var(--bl) + var(--bw))"></div>
+            <div class="truth play"><i class="bezel"></i><span class="t-chip">TRUE · 40,075 km</span></div>
+          </div>
+        </div>
+        <p class="r-line">
+          <span class="caught-only">your window <b>38,000 – 62,000 km</b> · verified truth <b>40,075 km</b> — inside</span>
+          <span class="miss-only">your window <b>8,000 – 25,000 km</b> · verified truth <b>40,075 km</b> — 1.60× beyond your upper bound</span>
+        </p>
+        <div class="gauge-zone">
+          <svg class="gauge" viewBox="0 0 320 178" aria-hidden="true">
+            <path d="M 46 150 A 118 118 0 0 1 274 150" stroke="rgba(25,28,23,.22)" stroke-width="14" fill="none"/>
+            <path d="M 46 150 A 118 118 0 0 1 274 150" stroke="#efe9d6" stroke-width="2" stroke-dasharray="2 8.6" fill="none"/>
+            <text x="42" y="168" text-anchor="middle" font-family="Arial" font-size="11" fill="rgba(25,28,23,.6)">0</text>
+            <text x="160" y="26" text-anchor="middle" font-family="Arial" font-size="11" fill="rgba(25,28,23,.6)">50</text>
+            <text x="280" y="168" text-anchor="middle" font-family="Arial" font-size="11" fill="rgba(25,28,23,.6)">100</text>
+            <g id="needleG">
+              <line x1="160" y1="150" x2="160" y2="54" stroke="#c03a26" stroke-width="3.5"/>
+              <circle cx="160" cy="150" r="9" fill="#a67c2c" stroke="#4d3a12" stroke-width="1.5"/>
+            </g>
+          </svg>
+          <div class="score-read">
+            <span class="s-num" id="scoreNum">0.0</span>
+            <span class="s-lab">RANGEFINDER SCORE</span>
+            <span class="s-sub" id="wrSub">W 0.213 · R 4.0 decades</span>
+            <span class="s-flag miss-only">negative — the miss penalty outweighed a narrow window</span>
+          </div>
+        </div>
+        <footer class="r-foot">
+          <span>VERIFIED · 40,075 km equatorial circumference</span>
+          <a href="#">SOURCE</a>
+        </footer>
+      </div></div>
+      <div class="flabel"><span>3 · REVEAL — truth needle drops on the same drum; gauge + counter tell the score story</span><span>719 × 545</span></div>
+    </div>
+  </div>
+
+  <section class="notes">
+    <h2>IDENTITY — “THE INSTRUMENT”</h2>
+    <ul>
+      <li>The app literally becomes its name: a precision surveying instrument. Ivory-enamel housing, machined brass controls, black measuring drum, porcelain readouts, one indicator red. Dark surfaces are dense and functional (a drum), never an empty void.</li>
+      <li>Material depth comes from machined layering — bezels, knurled grips, rivets, inset windows, hard drop shadows that read as physical weight. No gradients used decoratively; shading only models material.</li>
+      <li>Typography: engraved serif caps for the brand and actions, tabular numerals for every reading. Numerals are always inside an instrument surface (porcelain counter, drum chip), never floating labels.</li>
+    </ul>
+    <h2>INTERACTION APPROACH</h2>
+    <ul>
+      <li>The slider is a measuring drum: 54×164 px brass thumbs with knurled grips, amber luminous window between them, fine ticks that make every 1-px drag perceptible.</li>
+      <li>Live values roll in porcelain odometer counters joined by brass hinge rivets — reading the instrument, not filling a form. Lock is a full-width brass lever with real travel (6 px press).</li>
+    </ul>
+    <h2>MOTION</h2>
+    <ul>
+      <li>Drag: thumb depresses 3 px, amber window follows instantly, counters flip values.</li>
+      <li>Reveal: truth bezel drops onto the drum and settles with a slight overshoot; on a miss a red hatched bracket extends from your edge to the truth with the ×factor; gauge needle sweeps ~1.5 s with ease-out while the counter counts to the exact server score (respecting prefers-reduced-motion in production).</li>
+    </ul>
+    <h2>EMBEDDED FIT (719×545)</h2>
+    <ul>
+      <li>Splash budget: nameplate 46 + question 118 + instrument 240 + CTA block 132 = fits with air; nothing clipped, one CTA, no labels overlapping the artwork, no internal scroll.</li>
+      <li>Game budget: question row 84 + counters 84 + drum assembly 175 + lock 94 + how-to 30. Controls occupy ~65% of the frame.</li>
+    </ul>
+    <div class="rec"><b>Why this is the recommendation:</b> the instrument metaphor is Rangefinder’s own name, the drum gives continuous tactile feedback no quiz template can copy, and the reveal is mechanical storytelling (needle → truth → counter) instead of a big number with small labels.</div>
+  </section>
+
+<script>
+  const $=id=>document.getElementById(id);
+  const pct=d=>((d-3)/4*100);
+  const fmt=d=>{const km=Math.pow(10,d);const r=km>=10000?Math.round(km/1000)*1000:km>=1000?Math.round(km/100)*100:Math.round(km);return r.toLocaleString('en-US')+' km'};
+  const cur={l:Math.log10(38000),u:Math.log10(62000)};
+  function paintGame(){
+    $('tLow').style.left=pct(cur.l)+'%'; $('tUp').style.left=pct(cur.u)+'%';
+    $('band').style.left=pct(cur.l)+'%'; $('band').style.width=(pct(cur.u)-pct(cur.l))+'%';
+    $('vLow').textContent=fmt(cur.l); $('vUp').textContent=fmt(cur.u);
+  }
+  function drag(id,isLow){
+    const el=$(id),drum=$('drum'); let active=false;
+    el.addEventListener('pointerdown',e=>{active=true;el.classList.add('drag');el.setPointerCapture(e.pointerId);e.preventDefault()});
+    el.addEventListener('pointermove',e=>{if(!active)return;const r=drum.getBoundingClientRect();
+      let d=3+Math.min(Math.max(e.clientX-r.left,0)/r.width,1)*4;
+      if(isLow)cur.l=Math.min(d,cur.u-0.04); else cur.u=Math.max(d,cur.l+0.04); paintGame();});
+    const end=()=>{active=false;el.classList.remove('drag')};
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+  }
+  drag('tLow',true); drag('tUp',false); paintGame();
+
+  const CFG={
+    caught:{bl:39.5,bw:5.3,tl:40.05,score:94.7,wr:'W 0.213 · R 4.0 decades'},
+    miss:{bl:22.58,bw:12.32,tl:40.05,gl:34.9,gw:5.15,score:-14.4,wr:'W 4.577 · R 4.0 decades'}
+  };
+  function apply(mode){
+    const c=CFG[mode],s=$('reveal'); s.dataset.mode=mode;
+    s.style.setProperty('--bl',c.bl+'%'); s.style.setProperty('--bw',c.bw+'%');
+    s.style.setProperty('--tl',c.tl+'%');
+    if(c.gl!==undefined){s.style.setProperty('--gl',c.gl+'%');s.style.setProperty('--gw',c.gw+'%')}
+    $('wrSub').textContent=c.wr;
+    const t=s.querySelector('.truth'); t.classList.remove('play'); void t.offsetWidth; t.classList.add('play');
+    const n=$('needleG'); n.style.transition='none'; n.style.setProperty('--sc','-90deg');
+    void n.getBoundingClientRect(); n.style.transition='';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      n.style.setProperty('--sc',(-90+Math.max(Math.min(c.score,100),0)/100*180)+'deg');
+    }));
+    let t0=performance.now(); const el=$('scoreNum');
+    const tick=t=>{const p=Math.min((t-t0)/900,1);el.textContent=(c.score*(1-Math.pow(1-p,3))).toFixed(1);if(p<1)requestAnimationFrame(tick)};
+    requestAnimationFrame(tick);
+    document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+  }
+  document.querySelectorAll('.modes button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.m)));
+  apply('caught');
+</script>
+</body>
+</html>

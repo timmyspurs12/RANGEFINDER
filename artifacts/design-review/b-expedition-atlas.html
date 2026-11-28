@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direction B — “Expedition Atlas” · Rangefinder Stage 3.6 review</title>
+<style>
+  :root{
+    --paper:#f3ead7; --paper2:#e9dfc4; --ink:#2b241a; --soft:rgba(43,36,26,.6);
+    --verm:#d84b2f; --verm-d:#8f2f16; --gold:#c9a227; --card:#faf4e4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#232327}
+  body{font-family:Georgia,'Times New Roman',serif;color:#dfddd4;padding:30px 18px 90px}
+  .chrome{max-width:719px;margin:0 auto;font-family:Arial,Helvetica,sans-serif}
+  .chrome .bar{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:#b9b7ac;letter-spacing:.14em}
+  .chrome .bar b{color:#f0efe8}
+  .chrome .sub{font-size:12px;color:#8f8d84;margin-top:4px}
+  .modes{display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+  .modes span{font-size:12px;color:#8f8d84;letter-spacing:.08em;margin-right:6px}
+  .modes button{font:600 12px Arial,Helvetica,sans-serif;letter-spacing:.12em;padding:8px 16px;background:#3a3a40;color:#e6e4da;border:1px solid #55555c;border-radius:4px;cursor:pointer}
+  .modes button.on{background:#d84b2f;color:#fff7ec;border-color:#d84b2f}
+  .frames{max-width:719px;margin:0 auto;display:flex;flex-direction:column;gap:54px}
+  .device{width:719px;height:545px;overflow:hidden;border-radius:8px;background:#101010;box-shadow:0 30px 70px rgba(0,0,0,.55)}
+  .flabel{display:flex;justify-content:space-between;font:12px Arial,Helvetica,sans-serif;color:#8f8d84;margin:10px 2px 0;letter-spacing:.08em}
+  .notes{max-width:719px;margin:70px auto 0;font:14px/1.65 Arial,Helvetica,sans-serif;color:#c7c5bb}
+  .notes h2{font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.22em;color:#f0efe8;margin:26px 0 10px}
+  .notes ul{margin-left:18px}
+  .notes li{margin:6px 0}
+  .caught-only,.miss-only{display:none!important}
+  [data-mode="caught"] .caught-only{display:revert!important}
+  [data-mode="miss"] .miss-only{display:revert!important}
+
+  /* ============ SCREEN SHELL — 719×545 ============ */
+  .screen{width:719px;height:545px;position:relative;color:var(--ink);overflow:hidden;display:flex;flex-direction:column;
+    background:
+      radial-gradient(120% 90% at 50% 40%,rgba(43,36,26,0) 60%,rgba(43,36,26,.09) 100%),
+      repeating-linear-gradient(0deg,rgba(43,36,26,.045) 0 1px,transparent 1px 26px),
+      repeating-linear-gradient(90deg,rgba(43,36,26,.045) 0 1px,transparent 1px 26px),
+      var(--paper)}
+  .mast{display:flex;justify-content:space-between;align-items:baseline;margin:30px 40px 0}
+  .mast .m-brand{font-size:13px;font-weight:700;letter-spacing:.32em}
+  .mast .m-date{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.2em;color:var(--soft)}
+  .rule2{margin:10px 40px 0;border-top:1.5px solid var(--ink);border-bottom:1px solid var(--ink);height:4px}
+
+  /* ============ SPLASH ============ */
+  .sp-head{margin:22px 40px 0;text-align:center}
+  .kick{font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:.3em;color:var(--verm-d);text-transform:uppercase}
+  .q{font-size:34px;line-height:1.16;margin-top:10px}
+  .q em{color:var(--verm);font-style:italic}
+  .globe-wrap{margin:10px auto 0;height:236px;display:flex;justify-content:center;filter:drop-shadow(0 14px 16px rgba(43,36,26,.16))}
+  .sp-foot{margin-top:auto;text-align:center;padding:0 40px 28px}
+  .cta{display:inline-block;height:58px;padding:0 42px;border-radius:6px;cursor:pointer;transform:rotate(-1.2deg);
+    background:var(--verm);border:1.5px solid var(--ink);box-shadow:inset 0 0 0 3px #fff7ec,6px 8px 0 rgba(43,36,26,.16);
+    color:#fff7ec;font:700 16px Georgia,serif;letter-spacing:.28em}
+  .cta:active{transform:rotate(-1.2deg) translateY(3px);box-shadow:inset 0 0 0 3px #fff7ec,3px 4px 0 rgba(43,36,26,.16)}
+  .fine{font:italic 13px Georgia,serif;color:var(--soft);margin-top:12px}
+  .fine b{color:var(--ink);font-style:normal}
+
+  /* ============ GAME ============ */
+  .g-top{margin:28px 40px 0}
+  .g-kick{font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.28em;color:var(--verm-d)}
+  .g-q{font-size:22px;margin-top:6px}
+  .g-q svg{display:block;margin-top:6px}
+  .g-date{position:absolute;top:34px;right:40px;font-family:Arial,Helvetica,sans-serif;font-size:10.5px;letter-spacing:.2em;color:var(--soft)}
+  .strip-zone{margin:24px 67px 0;position:relative}
+  .strip{position:relative;height:112px;background:var(--paper2);border:1.5px solid var(--ink);border-radius:6px;
+    box-shadow:0 5px 0 rgba(43,36,26,.15),inset 0 2px 0 rgba(255,255,255,.5)}
+  .strip::before{content:"";position:absolute;top:10px;left:0;right:0;height:12px;
+    background:repeating-linear-gradient(90deg,rgba(43,36,26,.5) 0 1.5px,transparent 1.5px 10px)}
+  .tape{position:absolute;top:34px;height:32px;left:var(--bl,39.5%);width:var(--bw,5.3%);
+    background:
+      repeating-linear-gradient(90deg,rgba(143,47,22,.28) 0 2px,transparent 2px 12px),
+      rgba(216,75,47,.32);
+    border-top:2.5px solid var(--verm);border-bottom:2.5px solid var(--verm)}
+  .fast{position:absolute;top:26px;width:48px;height:48px;margin-left:-24px;border-radius:50%;cursor:grab;touch-action:none;z-index:3;
+    background:radial-gradient(circle at 35% 32%,#ecc873,#b98e37 58%,#82601e);
+    border:1.5px solid #3f2f0d;
+    box-shadow:0 5px 9px rgba(43,36,26,.35),inset 0 1px 0 rgba(255,244,205,.7)}
+  .fast::after{content:"";position:absolute;left:9px;right:9px;top:50%;height:4px;transform:translateY(-50%);background:#3f2f0d;border-radius:2px}
+  .fast.drag{cursor:grabbing;transform:scale(.94)}
+  .chit{position:absolute;top:86px;transform:translate(-50%,0) rotate(var(--tilt,-2deg));z-index:2;
+    background:var(--card);border:1.5px solid var(--ink);border-radius:4px;padding:6px 12px 5px;
+    box-shadow:3px 4px 0 rgba(43,36,26,.16);white-space:nowrap}
+  .chit .v{display:block;font-size:20px;font-weight:700;line-height:1.1}
+  .chit .l{display:block;font:700 8.5px Arial,Helvetica,sans-serif;letter-spacing:.24em;color:var(--soft);margin-top:2px}
+  .strip-labels{display:flex;justify-content:space-between;margin-top:10px;font:11px Arial,Helvetica,sans-serif;letter-spacing:.06em;color:var(--soft)}
+  .seal-row{display:flex;align-items:center;justify-content:center;gap:18px;margin:26px 40px 0}
+  .seal{flex:0 0 auto;width:62px;height:62px;border-radius:50%;
+    background:radial-gradient(circle at 38% 32%,#d9563c,#b23324 55%,#7e1f14);
+    box-shadow:0 5px 10px rgba(43,36,26,.3),inset 0 0 0 5px rgba(255,255,255,.14),inset 0 0 0 7px rgba(43,36,26,.28);
+    color:#f7e9d2;display:flex;align-items:center;justify-content:center;font:700 22px Georgia,serif}
+  .lockbtn{height:58px;padding:0 34px;border-radius:6px;cursor:pointer;
+    background:var(--verm);border:1.5px solid var(--verm-d);color:#fff7ec;
+    font:700 16px Georgia,serif;letter-spacing:.24em;
+    box-shadow:0 5px 0 var(--verm-d),6px 8px 0 rgba(43,36,26,.12)}
+  .lockbtn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--verm-d),3px 4px 0 rgba(43,36,26,.12)}
+  .howto{margin:14px 40px 0;font:italic 13px Georgia,serif;color:var(--soft);text-align:center}
+  .howto b{color:var(--ink);font-style:normal}
+
+  /* ============ REVEAL ============ */
+  .r-top{margin:26px 40px 0;position:relative;min-height:74px}
+  .r-q{font-size:19px}
+  .r-story{margin-top:8px;font:italic 14px Georgia,serif;color:var(--soft)}
+  .r-story b{color:var(--ink);font-style:normal}
+  .postmark{position:absolute;top:-14px;right:6px;width:150px;height:120px;color:var(--ink);transform:rotate(9deg)}
+  [data-mode="miss"] .postmark{color:var(--verm)}
+  .postmark.play{animation:stampin .5s ease-out both}
+  @keyframes stampin{0%{transform:rotate(9deg) scale(1.7);opacity:0}60%{transform:rotate(9deg) scale(.95);opacity:1}100%{transform:rotate(9deg) scale(1);opacity:1}}
+  .r-strip-zone{margin:8px 67px 0;position:relative}
+  .r-strip{position:relative;height:118px;background:var(--paper2);border:1.5px solid var(--ink);border-radius:6px;
+    box-shadow:0 5px 0 rgba(43,36,26,.15),inset 0 2px 0 rgba(255,255,255,.5)}
+  .r-strip::before{content:"";position:absolute;top:10px;left:0;right:0;height:12px;
+    background:repeating-linear-gradient(90deg,rgba(43,36,26,.5) 0 1.5px,transparent 1.5px 10px)}
+  .thread{position:absolute;left:var(--gl);width:var(--gw);top:56px;height:2px}
+  .thread path{stroke:var(--verm);stroke-width:2.5;fill:none;stroke-dasharray:6 6}
+  .thread b{position:absolute;left:50%;top:-16px;transform:translateX(-50%) rotate(-2deg);background:var(--card);
+    border:1.5px solid var(--verm);color:var(--verm-d);font:700 11px Arial,Helvetica,sans-serif;padding:3px 8px;border-radius:3px;white-space:nowrap}
+  .pin{position:absolute;left:var(--tl,40.05%);top:20px;width:44px;margin-left:-22px;z-index:4}
+  .pin .ring{animation:ping 1.3s ease-out 2 both;transform-origin:center}
+  .pin .ring.r2{animation-delay:.35s}
+  @keyframes ping{from{r:8;opacity:.9}to{r:27;opacity:0}}
+  .pin-chip{position:absolute;top:74px;left:50%;transform:translateX(-50%);white-space:nowrap;
+    background:var(--card);border:1.5px solid var(--ink);border-radius:4px;padding:4px 10px;
+    font:700 12px Arial,Helvetica,sans-serif;letter-spacing:.08em;box-shadow:3px 4px 0 rgba(43,36,26,.16)}
+  .score-row{display:flex;align-items:center;justify-content:center;gap:26px;margin:22px 40px 0}
+  .score-card{transform:rotate(-2deg);background:var(--card);border:1.5px solid var(--ink);border-radius:6px;
+    box-shadow:5px 7px 0 rgba(43,36,26,.16);padding:14px 34px 12px;text-align:center;position:relative}
+  .score-card.play{animation:press .45s cubic-bezier(.2,.8,.3,1.2) .25s both}
+  @keyframes press{from{transform:rotate(-2deg) scale(1.14);opacity:0}to{transform:rotate(-2deg) scale(1);opacity:1}}
+  .s-num{font-size:60px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+  [data-mode="miss"] .s-num{color:var(--verm)}
+  .s-lab{display:block;font:700 9px Arial,Helvetica,sans-serif;letter-spacing:.3em;color:var(--soft);margin-top:6px}
+  .s-sub{display:block;font:11px Consolas,Menlo,monospace;color:var(--soft);margin-top:4px}
+  .r-foot{margin:auto 40px 26px;font:italic 13px Georgia,serif;color:var(--soft);display:flex;justify-content:space-between}
+  .r-foot b{color:var(--ink);font-style:normal}
+  .r-foot a{color:var(--verm-d)}
+</style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="bar"><span><b>DIRECTION B</b> — “EXPEDITION ATLAS”</span><span>review composition · embedded 719×545</span></div>
+    <div class="sub">Layered paper-craft expedition journal. Estimation screen: drag the brass map fasteners. Reveal: toggle below.</div>
+    <div class="modes">
+      <span>reveal state:</span>
+      <button type="button" data-m="caught" class="on">CAUGHT (score 94.7)</button>
+      <button type="button" data-m="miss">MISS (score −14.4)</button>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ================= SPLASH ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <header class="mast"><span class="m-brand">THE DAILY EXPEDITION</span><span class="m-date">THU · NOV 26</span></header>
+        <div class="rule2"></div>
+        <div class="sp-head">
+          <p class="kick">Today’s survey</p>
+          <h1 class="q">What is the <em>circumference</em><br>of the Earth?</h1>
+        </div>
+        <div class="globe-wrap" aria-hidden="true">
+          <svg width="560" height="236" viewBox="0 0 560 236" fill="none">
+            <ellipse cx="280" cy="224" rx="150" ry="9" fill="rgba(43,36,26,.13)"/>
+            <!-- paper globe -->
+            <circle cx="280" cy="128" r="94" fill="#f0e7cd" stroke="#2b241a" stroke-width="2"/>
+            <!-- cut-paper continents (shadow dup + face) -->
+            <g>
+              <path d="M 235 69 c 30 -12 60 0 66 18 c 6 16 -10 28 -30 30 c -26 3 -50 -8 -54 -24 c -3 -12 6 -19 18 -24 z" fill="rgba(43,36,26,.12)" transform="translate(3,4)"/>
+              <path d="M 235 69 c 30 -12 60 0 66 18 c 6 16 -10 28 -30 30 c -26 3 -50 -8 -54 -24 c -3 -12 6 -19 18 -24 z" fill="#e6d7ae" stroke="#2b241a" stroke-width="1.5"/>
+              <path d="M 318 134 c 22 -6 44 4 48 20 c 3 14 -12 24 -32 24 c -20 0 -36 -9 -38 -22 c -2 -12 8 -17 22 -22 z" fill="rgba(43,36,26,.12)" transform="translate(3,4)"/>
+              <path d="M 318 134 c 22 -6 44 4 48 20 c 3 14 -12 24 -32 24 c -20 0 -36 -9 -38 -22 c -2 -12 8 -17 22 -22 z" fill="#ddcb9c" stroke="#2b241a" stroke-width="1.5"/>
+              <ellipse cx="256" cy="172" rx="11" ry="6" fill="#ddcb9c" stroke="#2b241a" stroke-width="1.2"/>
+            </g>
+            <ellipse cx="280" cy="128" rx="58" ry="94" stroke="rgba(43,36,26,.35)" stroke-width="1.2" stroke-dasharray="4 6" fill="none"/>
+            <!-- measuring tape, slightly askew -->
+            <g transform="rotate(-4 280 128)">
+              <rect x="172" y="106" width="250" height="36" rx="4" fill="rgba(216,75,47,.30)" stroke="#d84b2f" stroke-width="2.5"/>
+              <path d="M184 112V136M196 112V136M208 112V136M220 112V136M232 112V136M244 112V136M256 112V136M268 112V136M280 112V136M292 112V136M304 112V136M316 112V136M328 112V136M340 112V136M352 112V136M364 112V136M376 112V136M388 112V136M400 112V136M412 112V136" stroke="rgba(124,44,20,.45)" stroke-width="1.5"/>
+              <path d="M422 102 l18 6 v42 l-18 6 z" fill="#c23f22" stroke="#2b241a" stroke-width="1.5"/>
+              <circle cx="172" cy="106" r="7" fill="#c9a227" stroke="#2b241a" stroke-width="2"/>
+            </g>
+          </svg>
+        </div>
+        <div class="sp-foot">
+          <button class="cta" type="button">BEGIN THE SURVEY</button>
+          <p class="fine">Stretch a range across the scale — a tape pinning the truth scores <b>100</b>, the full map scores <b>0</b>, a miss scores <b>negative</b>.</p>
+        </div>
+      </div></div>
+      <div class="flabel"><span>1 · SPLASH — the question headlines the journal; a paper Earth is being taped for measurement</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= GAME ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <header class="g-top">
+          <p class="g-kick">TODAY’S SURVEY · LOG SCALE 10³–10⁷ KM</p>
+          <h2 class="g-q">Earth’s circumference — pin the true value
+            <svg width="120" height="9" viewBox="0 0 120 9" aria-hidden="true"><path d="M2 6 Q 14 0 26 6 T 50 6 T 74 6 T 98 6 T 118 6" stroke="#d84b2f" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+          </h2>
+        </header>
+        <span class="g-date">NOV 26</span>
+        <div class="strip-zone">
+          <div class="strip" id="strip">
+            <div class="tape" id="tape"></div>
+            <div class="fast" id="tLow" style="left:39.5%"></div>
+            <div class="fast" id="tUp" style="left:44.8%"></div>
+            <div class="chit" id="cLow" style="left:39.5%;--tilt:-2deg"><span class="v" id="vLow">38,000 km</span><span class="l">LOWER</span></div>
+            <div class="chit" id="cUp" style="left:44.8%;--tilt:2deg"><span class="v" id="vUp">62,000 km</span><span class="l">UPPER</span></div>
+          </div>
+          <div class="strip-labels"><span>10³ km</span><span>10⁴</span><span>10⁵</span><span>10⁶</span><span>10⁷ km</span></div>
+        </div>
+        <div class="seal-row">
+          <span class="seal" aria-hidden="true">R</span>
+          <button class="lockbtn" type="button">SEAL MY ESTIMATE</button>
+        </div>
+        <p class="howto">Drag the <b>brass fasteners</b> to stretch your tape — narrower tapes score higher, missing the truth scores <b>negative</b>.</p>
+      </div></div>
+      <div class="flabel"><span>2 · ESTIMATION — stretching the vermilion tape between two fasteners is the mechanic (drag them)</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= REVEAL ================= -->
+    <div>
+      <div class="device"><div class="screen" id="reveal" data-mode="caught">
+        <header class="r-top">
+          <div>
+            <h2 class="r-q">The survey is verified</h2>
+            <p class="r-story">
+              <span class="caught-only">your tape (<b>38,000 – 62,000 km</b>) held the truth — the pin lands <b>inside</b>.</span>
+              <span class="miss-only">your tape (<b>8,000 – 25,000 km</b>) fell <b>1.60×</b> short — the pin lands <b>beyond the tape’s end</b>.</span>
+            </p>
+          </div>
+          <svg class="postmark play" viewBox="0 0 150 120" aria-hidden="true">
+            <g stroke="currentColor" stroke-width="2" fill="none">
+              <path d="M4 46 q9 -6 18 0 t18 0 t18 0"/>
+              <path d="M10 58 q9 -6 18 0 t18 0 t18 0"/>
+              <path d="M4 70 q9 -6 18 0 t18 0 t18 0"/>
+            </g>
+            <circle cx="98" cy="58" r="46" fill="none" stroke="currentColor" stroke-width="2.5"/>
+            <circle cx="98" cy="58" r="38" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <g fill="currentColor" text-anchor="middle">
+              <text x="98" y="48" font-family="Georgia,serif" font-size="15" font-weight="700" letter-spacing="1" class="caught-only">CAUGHT</text>
+              <text x="98" y="48" font-family="Georgia,serif" font-size="15" font-weight="700" letter-spacing="1" class="miss-only">MISSED</text>
+              <text x="98" y="64" font-family="Arial" font-size="8.5" letter-spacing="1.5" class="caught-only">IN RANGE</text>
+              <text x="98" y="64" font-family="Arial" font-size="8.5" letter-spacing="1.5" class="miss-only">OUT OF RANGE</text>
+              <text x="98" y="80" font-family="Arial" font-size="8" letter-spacing="1">NOV 26</text>
+            </g>
+          </svg>
+        </header>
+        <div class="r-strip-zone">
+          <div class="r-strip">
+            <div class="tape"></div>
+            <svg class="thread miss-only" viewBox="0 0 100 40" preserveAspectRatio="none" style="height:34px">
+              <path d="M2 8 Q 50 34 98 30"/>
+            </svg>
+            <span class="thread miss-only" style="overflow:visible"><b>×1.60 SHORT</b></span>
+            <div class="pin play">
+              <svg width="44" height="66" viewBox="0 0 44 66" aria-hidden="true">
+                <line x1="22" y1="0" x2="22" y2="40" stroke="#2b241a" stroke-width="2"/>
+                <circle class="ring" cx="22" cy="44" r="8" fill="none" stroke="#d84b2f" stroke-width="2"/>
+                <circle class="ring r2" cx="22" cy="44" r="8" fill="none" stroke="#d84b2f" stroke-width="2"/>
+                <circle cx="22" cy="44" r="8" fill="#c9a227" stroke="#2b241a" stroke-width="2"/>
+              </svg>
+              <span class="pin-chip">TRUE · 40,075 km</span>
+            </div>
+          </div>
+          <div class="strip-labels"><span>10³ km</span><span>10⁴</span><span>10⁵</span><span>10⁶</span><span>10⁷ km</span></div>
+        </div>
+        <div class="score-row">
+          <div class="score-card play">
+            <span class="s-num" id="scoreNum">0.0</span>
+            <span class="s-lab">SURVEY POINTS</span>
+            <span class="s-sub" id="wrSub">W 0.213 · R 4.0 decades</span>
+          </div>
+        </div>
+        <footer class="r-foot">
+          <span class="caught-only">Verified answer: <b>40,075 km</b> — equatorial circumference</span>
+          <span class="miss-only">Verified answer: <b>40,075 km</b> — 1.60× beyond your upper bound</span>
+          <a href="#">source</a>
+        </footer>
+      </div></div>
+      <div class="flabel"><span>3 · REVEAL — a pin drops onto the same map scale; postmark stamps the verdict, card presses the score</span><span>719 × 545</span></div>
+    </div>
+  </div>
+
+  <section class="notes">
+    <h2>IDENTITY — “EXPEDITION ATLAS”</h2>
+    <ul>
+      <li>A living expedition journal: warm chart-paper ground, ink rules, a layered paper-cut Earth with visible thickness (shadow duplicates), and a vermilion measuring tape wrapped around the equator — the tape IS the game’s range.</li>
+      <li>Depth from paper layering: soft heavy shadows, chips and cards that sit above the page, slightly rotated elements like things pinned by hand. Nothing symmetrical or dashboard-like.</li>
+      <li>Typography: journal serif for prose and the question, hand-stamped Arial caps for labels, tabular numerals on paper chits.</li>
+    </ul>
+    <h2>INTERACTION APPROACH</h2>
+    <ul>
+      <li>The range is a physical act: you stretch a tape between two large brass map fasteners; your bounds are inked on paper chits that tilt like hand-pinned notes.</li>
+      <li>Lock = pressing a wax seal (the “R” stamp) next to a vermilion button — sealing your estimate.</li>
+    </ul>
+    <h2>MOTION</h2>
+    <ul>
+      <li>Drag: fastener presses down, tape stretches between them, chits travel with the fasteners.</li>
+      <li>Reveal: postmark slams in with overshoot; a brass pin drops with two expanding sonar rings; on a miss a dashed slack-thread shows the shortfall with a ×factor chit; score card presses in, count-up settles on the exact server value.</li>
+    </ul>
+    <h2>EMBEDDED FIT (719×545)</h2>
+    <ul>
+      <li>Splash: masthead 60 + question 120 + globe 246 + CTA block 110 — fits; the artwork carries the question’s meaning (taping the equator) with zero callout labels.</li>
+      <li>Game: header 90 + ruler strip 130 + seal row 90 + how-to 30; large 48 px fasteners and 32 px tape keep touch targets generous.</li>
+    </ul>
+    <div class="notes" style="background:#2c2c31;border:1px solid #45454b;padding:14px 16px;border-radius:6px;margin-top:18px"><b>Trade-offs:</b> warmest and most playful of the three; slightly closer to “illustrated quiz” territory than A, and layered shadows need care at very narrow widths. Its tape/pin vocabulary could donate itself to A’s reveal if you want more warmth there.</div>
+  </section>
+
+<script>
+  const $=id=>document.getElementById(id);
+  const pct=d=>((d-3)/4*100);
+  const fmt=d=>{const km=Math.pow(10,d);const r=km>=10000?Math.round(km/1000)*1000:km>=1000?Math.round(km/100)*100:Math.round(km);return r.toLocaleString('en-US')+' km'};
+  const cur={l:Math.log10(38000),u:Math.log10(62000)};
+  function paintGame(){
+    $('tLow').style.left=pct(cur.l)+'%'; $('tUp').style.left=pct(cur.u)+'%';
+    $('cLow').style.left=pct(cur.l)+'%'; $('cUp').style.left=pct(cur.u)+'%';
+    $('tape').style.left=pct(cur.l)+'%'; $('tape').style.width=(pct(cur.u)-pct(cur.l))+'%';
+    $('vLow').textContent=fmt(cur.l); $('vUp').textContent=fmt(cur.u);
+  }
+  function drag(id,isLow){
+    const el=$(id),strip=$('strip'); let active=false;
+    el.addEventListener('pointerdown',e=>{active=true;el.classList.add('drag');el.setPointerCapture(e.pointerId);e.preventDefault()});
+    el.addEventListener('pointermove',e=>{if(!active)return;const r=strip.getBoundingClientRect();
+      let d=3+Math.min(Math.max(e.clientX-r.left,0)/r.width,1)*4;
+      if(isLow)cur.l=Math.min(d,cur.u-0.04); else cur.u=Math.max(d,cur.l+0.04); paintGame();});
+    const end=()=>{active=false;el.classList.remove('drag')};
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+  }
+  drag('tLow',true); drag('tUp',false); paintGame();
+
+  const CFG={
+    caught:{bl:39.5,bw:5.3,tl:40.05,score:94.7,wr:'W 0.213 · R 4.0 decades'},
+    miss:{bl:22.58,bw:12.32,tl:40.05,gl:34.9,gw:5.15,score:-14.4,wr:'W 4.577 · R 4.0 decades'}
+  };
+  function apply(mode){
+    const c=CFG[mode],s=$('reveal'); s.dataset.mode=mode;
+    s.style.setProperty('--bl',c.bl+'%'); s.style.setProperty('--bw',c.bw+'%');
+    s.style.setProperty('--tl',c.tl+'%'); s.style.setProperty('--gl',c.gl+'%'); s.style.setProperty('--gw',c.gw+'%');
+    $('wrSub').textContent=c.wr;
+    const pm=s.querySelector('.postmark'),sc=s.querySelector('.score-card'),pin=s.querySelector('.pin');
+    [pm,sc,pin].forEach(el=>{el.classList.remove('play');void el.offsetWidth;el.classList.add('play')});
+    let t0=performance.now(); const el=$('scoreNum');
+    const tick=t=>{const p=Math.min((t-t0)/900,1);el.textContent=(c.score*(1-Math.pow(1-p,3))).toFixed(1);if(p<1)requestAnimationFrame(tick)};
+    requestAnimationFrame(tick);
+    document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+  }
+  document.querySelectorAll('.modes button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.m)));
+  apply('caught');
+</script>
+</body>
+</html>

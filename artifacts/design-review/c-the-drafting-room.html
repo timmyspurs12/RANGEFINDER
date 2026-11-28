@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direction C — “The Drafting Room” · Rangefinder Stage 3.6 review</title>
+<style>
+  :root{
+    --blue:#16336e; --blue-d:#0e2148; --line:#e9edf5; --dim:rgba(233,237,245,.55);
+    --faint:rgba(233,237,245,.28); --orange:#ff6b35; --orange-t:#ffd9c2; --red:#ff5a52;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#232327}
+  body{font-family:Arial,Helvetica,sans-serif;color:#dfddd4;padding:30px 18px 90px}
+  .chrome{max-width:719px;margin:0 auto}
+  .chrome .bar{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:#b9b7ac;letter-spacing:.14em}
+  .chrome .bar b{color:#f0efe8}
+  .chrome .sub{font-size:12px;color:#8f8d84;margin-top:4px}
+  .modes{display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+  .modes span{font-size:12px;color:#8f8d84;letter-spacing:.08em;margin-right:6px}
+  .modes button{font:600 12px Arial,Helvetica,sans-serif;letter-spacing:.12em;padding:8px 16px;background:#3a3a40;color:#e6e4da;border:1px solid #55555c;border-radius:4px;cursor:pointer}
+  .modes button.on{background:#ff6b35;color:#241108;border-color:#ff6b35}
+  .frames{max-width:719px;margin:0 auto;display:flex;flex-direction:column;gap:54px}
+  .device{width:719px;height:545px;overflow:hidden;border-radius:8px;background:#101010;box-shadow:0 30px 70px rgba(0,0,0,.55)}
+  .flabel{display:flex;justify-content:space-between;font:12px Arial,Helvetica,sans-serif;color:#8f8d84;margin:10px 2px 0;letter-spacing:.08em}
+  .notes{max-width:719px;margin:70px auto 0;font:14px/1.65 Arial,Helvetica,sans-serif;color:#c7c5bb}
+  .notes h2{font:700 13px Arial,Helvetica,sans-serif;letter-spacing:.22em;color:#f0efe8;margin:26px 0 10px}
+  .notes ul{margin-left:18px}
+  .notes li{margin:6px 0}
+  .caught-only,.miss-only{display:none!important}
+  [data-mode="caught"] .caught-only{display:revert!important}
+  [data-mode="miss"] .miss-only{display:revert!important}
+
+  /* ============ SCREEN SHELL — 719×545 ============ */
+  .screen{width:719px;height:545px;position:relative;color:var(--line);overflow:hidden;display:flex;flex-direction:column;
+    background:
+      repeating-linear-gradient(0deg,rgba(233,237,245,.055) 0 1px,transparent 1px 24px),
+      repeating-linear-gradient(90deg,rgba(233,237,245,.055) 0 1px,transparent 1px 24px),
+      linear-gradient(160deg,#1a3c80 0%,var(--blue) 40%,var(--blue-d) 100%)}
+  .sheet{position:absolute;inset:14px;border:1px solid var(--faint);pointer-events:none;z-index:5}
+  .crop{position:absolute;width:14px;height:14px;z-index:6;pointer-events:none}
+  .crop::before,.crop::after{content:"";position:absolute;background:var(--line)}
+  .crop::before{width:14px;height:1.5px}.crop::after{width:1.5px;height:14px}
+  .crop.tl{top:8px;left:8px}.crop.tr{top:8px;right:8px;transform:scaleX(-1)}
+  .crop.bl{bottom:8px;left:8px;transform:scaleY(-1)}.crop.br{bottom:8px;right:8px;transform:scale(-1)}
+  .mono{font-family:Consolas,Menlo,'Courier New',monospace}
+
+  /* ============ SPLASH ============ */
+  .tblock{display:flex;justify-content:space-between;align-items:center;margin:30px 34px 0;
+    border:1px solid var(--faint);padding:9px 14px;font-size:11px;letter-spacing:.22em;color:var(--dim)}
+  .tblock b{color:var(--line);font-weight:700}
+  .sp-head{margin:24px 34px 0;text-align:center}
+  .kick{font-size:10.5px;letter-spacing:.34em;color:var(--orange)}
+  .q{font-family:'Arial Narrow','Segoe UI',Arial,sans-serif;font-stretch:condensed;font-size:37px;font-weight:700;letter-spacing:.01em;line-height:1.12;margin-top:10px}
+  .fig{margin:6px auto 0;height:226px;display:flex;justify-content:center}
+  .sp-foot{margin-top:auto;padding:0 34px 28px;display:flex;align-items:center;gap:18px}
+  .cta{flex:0 0 auto;height:56px;padding:0 34px;border-radius:3px;cursor:pointer;
+    background:var(--orange);border:1px solid var(--orange-t);color:#241108;
+    font:700 15px 'Arial Narrow','Segoe UI',Arial,sans-serif;letter-spacing:.26em;
+    box-shadow:0 4px 0 rgba(0,0,0,.35)}
+  .cta:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.35)}
+  .fine{font-size:12px;line-height:1.5;color:var(--dim)}
+  .fine b{color:var(--line)}
+
+  /* ============ GAME ============ */
+  .g-top{margin:30px 34px 0}
+  .g-kick{font-size:10px;letter-spacing:.3em;color:var(--orange)}
+  .g-q{font-family:'Arial Narrow','Segoe UI',Arial,sans-serif;font-size:23px;font-weight:700;margin-top:6px}
+  .g-date{position:absolute;top:36px;right:34px;font-family:Consolas,Menlo,monospace;font-size:11px;letter-spacing:.14em;color:var(--dim)}
+  .dim{position:relative;height:186px;margin:20px 64px 0}
+  .dim::after{content:"";position:absolute;left:0;right:0;bottom:36px;height:2px;background:var(--line)}
+  .dim::before{content:"";position:absolute;left:0;right:0;bottom:38px;height:9px;
+    background:repeating-linear-gradient(90deg,rgba(233,237,245,.45) 0 1px,transparent 1px 9px)}
+  .band{position:absolute;bottom:38px;height:78px;left:var(--bl,39.5%);width:var(--bw,5.3%);
+    background:repeating-linear-gradient(45deg,rgba(255,107,53,.22) 0 5px,rgba(255,107,53,.1) 5px 10px);
+    border-left:2px solid var(--orange);border-right:2px solid var(--orange)}
+  .chip{position:absolute;top:0;transform:translateX(-50%);border:1.5px solid var(--orange);
+    background:rgba(255,107,53,.14);color:var(--orange-t);
+    font:700 17px Consolas,Menlo,monospace;padding:6px 11px;white-space:nowrap}
+  .chip .u{font-size:10px;color:var(--dim);font-weight:400}
+  .ext{position:absolute;left:var(--x);top:38px;height:26px;width:1px;background:var(--dim)}
+  .ext::after{content:"";position:absolute;left:-2px;bottom:-3px;width:5px;height:5px;border-radius:50%;background:var(--orange)}
+  .hnd{position:absolute;bottom:16px;width:44px;height:44px;margin-left:-22px;border-radius:50%;cursor:grab;touch-action:none;z-index:3;
+    background:var(--orange);border:2px solid var(--orange-t);box-shadow:0 0 0 3px rgba(255,107,53,.25),0 4px 10px rgba(0,0,0,.35)}
+  .hnd::before,.hnd::after{content:"";position:absolute;background:#fff;border-radius:1px}
+  .hnd::before{left:50%;top:7px;bottom:7px;width:2px;transform:translateX(-50%)}
+  .hnd::after{top:50%;left:7px;right:7px;height:2px;transform:translateY(-50%)}
+  .hnd.drag{cursor:grabbing;transform:scale(.94)}
+  .hnd.drag::before{transform:translateX(-50%) rotate(45deg)}
+  .hnd.drag::after{transform:translateY(-50%) rotate(45deg)}
+  .dec-labels{position:absolute;left:0;right:0;bottom:8px;display:flex;justify-content:space-between;
+    font-family:Consolas,Menlo,monospace;font-size:11px;color:var(--dim)}
+  .lock-row{margin:26px 34px 0}
+  .lock{width:100%;height:60px;border-radius:3px;cursor:pointer;
+    background:var(--orange);border:1px solid var(--orange-t);color:#241108;
+    font:700 16px 'Arial Narrow','Segoe UI',Arial,sans-serif;letter-spacing:.3em;
+    box-shadow:0 5px 0 rgba(0,0,0,.35)}
+  .lock:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.35)}
+  .howto{margin:13px 34px 0;font-size:12px;color:var(--dim);text-align:center;letter-spacing:.04em}
+  .howto b{color:var(--line)}
+
+  /* ============ REVEAL ============ */
+  .r-top{margin:30px 34px 0;display:flex;justify-content:space-between;align-items:flex-start}
+  .r-kick{font-size:10px;letter-spacing:.3em;color:var(--orange)}
+  .r-q{font-family:'Arial Narrow','Segoe UI',Arial,sans-serif;font-size:22px;font-weight:700;margin-top:6px}
+  .r-sub{margin-top:7px;font-size:12.5px;color:var(--dim)}
+  .r-sub b{color:var(--line)}
+  .stampbox{position:relative;width:170px;height:118px;flex:0 0 auto}
+  .stamp{position:absolute;color:var(--orange);transform:rotate(-8deg)}
+  [data-mode="miss"] .stamp{color:var(--red)}
+  .stamp.play{animation:stampin .5s ease-out both}
+  @keyframes stampin{0%{transform:rotate(-8deg) scale(1.7);opacity:0}60%{transform:rotate(-8deg) scale(.95);opacity:1}100%{transform:rotate(-8deg) scale(1);opacity:1}}
+  .r-dim{position:relative;height:180px;margin:16px 64px 0}
+  .r-dim::after{content:"";position:absolute;left:0;right:0;bottom:36px;height:2px;background:var(--line)}
+  .r-dim::before{content:"";position:absolute;left:0;right:0;bottom:38px;height:9px;
+    background:repeating-linear-gradient(90deg,rgba(233,237,245,.45) 0 1px,transparent 1px 9px)}
+  .gap{position:absolute;left:var(--gl);width:var(--gw);bottom:38px;height:74px;
+    background:repeating-linear-gradient(135deg,rgba(255,90,82,.32) 0 4px,transparent 4px 9px);
+    border:1px dashed rgba(255,90,82,.85)}
+  .gap b{position:absolute;left:50%;top:-26px;transform:translateX(-50%);background:var(--red);color:#2a0906;
+    font:700 11px Consolas,Menlo,monospace;letter-spacing:.06em;padding:3px 8px;white-space:nowrap}
+  .tarrow{position:absolute;left:var(--tl,40.05%);bottom:36px;height:98px;width:2px;background:var(--line)}
+  .tarrow::after{content:"";position:absolute;bottom:-9px;left:-6px;border:7px solid transparent;border-top:10px solid var(--line)}
+  .tarrow .head{position:absolute;top:-12px;left:-8px;width:18px;height:5px;background:var(--line)}
+  .tbox{position:absolute;left:var(--tl,40.05%);bottom:140px;transform:translateX(-50%);
+    border:1px solid var(--line);background:rgba(14,33,72,.92);padding:6px 11px;white-space:nowrap;
+    font:700 13px Consolas,Menlo,monospace;box-shadow:0 4px 10px rgba(0,0,0,.3)}
+  .tbox .ok{color:var(--orange);margin-left:8px}
+  .score-row{display:flex;align-items:center;gap:26px;margin:20px 34px 0}
+  .score-block{flex:0 0 auto;min-width:230px}
+  .s-num{font:700 58px Consolas,Menlo,monospace;line-height:1;color:var(--line)}
+  [data-mode="miss"] .s-num{color:var(--red)}
+  .s-lab{font-size:10px;letter-spacing:.3em;color:var(--dim);margin-top:6px}
+  .s-rule{position:relative;height:4px;background:rgba(233,237,245,.18);margin-top:12px}
+  .s-rule i{position:absolute;top:-6px;width:2.5px;height:16px;background:var(--orange);left:var(--sp,94.7%)}
+  [data-mode="miss"] .s-rule i{background:var(--red)}
+  .s-ends{display:flex;justify-content:space-between;font:10px Consolas,Menlo,monospace;color:var(--dim);margin-top:5px}
+  .tblock2{display:grid;grid-template-columns:1.15fr 1fr .9fr 1.2fr;border:1px solid var(--faint);margin:22px 34px 0;font-family:Consolas,Menlo,monospace}
+  .tblock2 div{padding:8px 12px;border-right:1px solid rgba(233,237,245,.18)}
+  .tblock2 div:last-child{border-right:none}
+  .tblock2 .l{display:block;font-size:8.5px;letter-spacing:.2em;color:var(--dim)}
+  .tblock2 .v{display:block;font-size:12.5px;color:var(--line);margin-top:3px;white-space:nowrap}
+</style>
+</head>
+<body>
+  <div class="chrome">
+    <div class="bar"><span><b>DIRECTION C</b> — “THE DRAFTING ROOM”</span><span>review composition · embedded 719×545</span></div>
+    <div class="sub">Cyanotype engineering drawing. Every challenge is a dimension to be set on the sheet. Estimation: drag the crosshair handles. Reveal: toggle below.</div>
+    <div class="modes">
+      <span>reveal state:</span>
+      <button type="button" data-m="caught" class="on">CAUGHT (score 94.7)</button>
+      <button type="button" data-m="miss">MISS (score −14.4)</button>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ================= SPLASH ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+        <div class="sheet"></div>
+        <header class="tblock"><span><b>RANGEFINDER</b> · DAILY DIMENSION SHEET</span><span class="mono">SHEET 1126 · SCALE LOG₁₀ KM</span></header>
+        <div class="sp-head">
+          <p class="kick">PROBLEM Nº 1126</p>
+          <h1 class="q">What is the circumference<br>of the Earth?</h1>
+        </div>
+        <div class="fig" aria-hidden="true">
+          <svg width="640" height="226" viewBox="0 0 640 226" fill="none">
+            <!-- wireframe sphere -->
+            <g stroke="#e9edf5" fill="none">
+              <circle cx="300" cy="126" r="86" stroke-width="1.6" opacity=".95"/>
+              <ellipse cx="300" cy="96" rx="80.6" ry="25.8" stroke-width="1" opacity=".35"/>
+              <ellipse cx="300" cy="156" rx="80.6" ry="25.8" stroke-width="1" opacity=".35"/>
+              <ellipse cx="300" cy="68" rx="63.5" ry="20.3" stroke-width="1" opacity=".28"/>
+              <ellipse cx="300" cy="184" rx="63.5" ry="20.3" stroke-width="1" opacity=".28"/>
+              <ellipse cx="300" cy="126" rx="32" ry="86" stroke-width="1" opacity=".35"/>
+              <ellipse cx="300" cy="126" rx="60" ry="86" stroke-width="1" opacity=".22"/>
+              <line x1="288" y1="126" x2="312" y2="126" stroke-width="1" opacity=".5"/>
+              <line x1="300" y1="114" x2="300" y2="138" stroke-width="1" opacity=".5"/>
+            </g>
+            <!-- equator: the dimension being asked -->
+            <ellipse cx="300" cy="126" rx="86" ry="27.5" stroke="#ff6b35" stroke-width="2.5" fill="none"/>
+            <!-- dimension construction to the unknown -->
+            <g stroke="rgba(233,237,245,.55)" stroke-width="1">
+              <path d="M214 126 V62"/><path d="M386 126 V62"/>
+            </g>
+            <path d="M214 62 H386" stroke="#e9edf5" stroke-width="1.5"/>
+            <path d="M214 62 l11 -4 v8 z" fill="#e9edf5"/>
+            <path d="M386 62 l-11 -4 v8 z" fill="#e9edf5"/>
+            <text x="300" y="46" text-anchor="middle" font-family="Consolas,Menlo,monospace" font-size="17" font-weight="700" fill="#ff8c5f">C = ?</text>
+            <text x="300" y="216" text-anchor="middle" font-family="Arial" font-size="9.5" letter-spacing="2" fill="rgba(233,237,245,.5)">FIG. 1 — EQUATORIAL EXTENT · TO BE DETERMINED BY THE PLAYER</text>
+          </svg>
+        </div>
+        <div class="sp-foot">
+          <button class="cta" type="button">SET THE DIMENSION</button>
+          <p class="fine">You’ll draft a range on a log scale — an exact dimension scores <b>100</b>, the full scale <b>0</b>, a wrong one goes <b>negative</b>.</p>
+        </div>
+      </div></div>
+      <div class="flabel"><span>1 · SPLASH — the problem is titled like a drawing; the equator is literally dimensioned “C = ?”</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= GAME ================= -->
+    <div>
+      <div class="device"><div class="screen">
+        <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+        <div class="sheet"></div>
+        <header class="g-top">
+          <p class="g-kick">PROBLEM Nº 1126 · LOG SCALE 10³–10⁷ KM</p>
+          <h2 class="g-q">Earth’s circumference — set the true dimension</h2>
+        </header>
+        <span class="g-date">NOV 26</span>
+        <div class="dim" id="dim">
+          <div class="band" id="band"></div>
+          <div class="chip" id="cLow" style="left:39.5%">3.8×10⁴ <span class="u">km lower</span></div>
+          <div class="chip" id="cUp" style="left:44.8%">6.2×10⁴ <span class="u">km upper</span></div>
+          <span class="ext" id="xLow" style="--x:39.5%"></span>
+          <span class="ext" id="xUp" style="--x:44.8%"></span>
+          <div class="hnd" id="tLow" style="left:39.5%"></div>
+          <div class="hnd" id="tUp" style="left:44.8%"></div>
+          <div class="dec-labels"><span>10³</span><span>10⁴</span><span>10⁵</span><span>10⁶</span><span>10⁷ km</span></div>
+        </div>
+        <div class="lock-row"><button class="lock" type="button">STAMP DIMENSION</button></div>
+        <p class="howto">Drag the <b>crosshair handles</b> to bracket the answer — the tighter your dimension band, the higher the score; a miss scores <b>negative</b>.</p>
+      </div></div>
+      <div class="flabel"><span>2 · ESTIMATION — drafting a dimension band between two crosshair handles (drag them)</span><span>719 × 545</span></div>
+    </div>
+
+    <!-- ================= REVEAL ================= -->
+    <div>
+      <div class="device"><div class="screen" id="reveal" data-mode="caught">
+        <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+        <div class="sheet"></div>
+        <header class="r-top">
+          <div>
+            <p class="r-kick">VERIFICATION</p>
+            <h2 class="r-q">Dimension check</h2>
+            <p class="r-sub">
+              <span class="caught-only">your band (<b>3.8–6.2×10⁴ km</b>) contains the true dimension <b>4.0075×10⁴ km</b>.</span>
+              <span class="miss-only">your band (<b>0.8–2.5×10⁴ km</b>) sits <b>1.60×</b> short of the true dimension <b>4.0075×10⁴ km</b>.</span>
+            </p>
+          </div>
+          <div class="stampbox">
+            <svg class="stamp play" width="170" height="118" viewBox="0 0 170 118" aria-hidden="true">
+              <circle cx="85" cy="59" r="52" fill="none" stroke="currentColor" stroke-width="2.5"/>
+              <circle cx="85" cy="59" r="43" fill="none" stroke="currentColor" stroke-width="1.2"/>
+              <g fill="currentColor" text-anchor="middle">
+                <text x="85" y="52" font-family="Arial Narrow,Arial" font-size="13.5" font-weight="700" letter-spacing="1.5" class="caught-only">IN TOLERANCE</text>
+                <text x="85" y="52" font-family="Arial Narrow,Arial" font-size="13.5" font-weight="700" letter-spacing="1.5" class="miss-only">OUT OF TOLERANCE</text>
+                <text x="85" y="70" font-family="Consolas,Menlo,monospace" font-size="10" letter-spacing="1">RANGEFINDER</text>
+                <text x="85" y="84" font-family="Consolas,Menlo,monospace" font-size="9" letter-spacing="1">SHEET 1126</text>
+              </g>
+            </svg>
+          </div>
+        </header>
+        <div class="r-dim">
+          <div class="band"></div>
+          <div class="gap miss-only"><b>Δ ×1.60</b></div>
+          <div class="tarrow play"><span class="head"></span></div>
+          <span class="tbox play">TRUE 4.0075×10⁴ km<span class="ok caught-only">· IN BAND</span><span class="ok miss-only">· OUT OF BAND</span></span>
+          <div class="dec-labels"><span>10³</span><span>10⁴</span><span>10⁵</span><span>10⁶</span><span>10⁷ km</span></div>
+        </div>
+        <div class="score-row">
+          <div class="score-block">
+            <span class="s-num" id="scoreNum">0.0</span>
+            <span class="s-lab">SCORE / 100</span>
+            <div class="s-rule"><i id="scoreMark"></i></div>
+            <div class="s-ends"><span>0</span><span>100</span></div>
+          </div>
+          <p class="r-sub" style="max-width:330px">
+            <span class="caught-only">Band width <b class="mono">0.213 dec</b> · no miss penalty · score = 100 × (1 − W/R), W = 0.213, R = 4.0.</span>
+            <span class="miss-only">Band width <b class="mono">0.495 dec</b> · miss penalty 20 × 0.204 · W = 4.577 against R = 4.0 → negative.</span>
+          </p>
+        </div>
+        <div class="tblock2">
+          <div><span class="l">YOUR DIMENSION</span><span class="v caught-only">3.8 – 6.2×10⁴ km</span><span class="v miss-only">0.8 – 2.5×10⁴ km</span></div>
+          <div><span class="l">TRUE</span><span class="v">4.0075×10⁴ km</span></div>
+          <div><span class="l">W / R</span><span class="v" id="wrSub">0.213 / 4.0</span></div>
+          <div><span class="l">SOURCE</span><span class="v">britannica.com — Earth</span></div>
+        </div>
+      </div></div>
+      <div class="flabel"><span>3 · REVEAL — the true dimension arrow drops onto the same sheet; inspection stamp + delta hatch tell the story</span><span>719 × 545</span></div>
+    </div>
+  </div>
+
+  <section class="notes">
+    <h2>IDENTITY — “THE DRAFTING ROOM”</h2>
+    <ul>
+      <li>Every daily challenge is an engineering drawing: cyanotype ground with a real blueprint grid, white construction line-work, sheet border with crop marks, and a title block that carries genuine information (sheet number, scale) — not a badge.</li>
+      <li>The splash artwork is a technical drawing of the question: a wireframe sphere whose equator is dimensioned “C = ?” with proper extension lines and arrows. The illustration IS the question’s notation.</li>
+      <li>Typography: condensed sans (drawing lettering) for headlines, stenciled monospace for every numeric, safety-orange reserved for the dimension you control.</li>
+    </ul>
+    <h2>INTERACTION APPROACH</h2>
+    <ul>
+      <li>The slider is a drafted dimension line: orange crosshair handles drop extension lines up to stenciled value chips; the selected band is hatched like a section cut. Dragging rotates the crosshairs into an “X” — the drafting feel of taking a measurement.</li>
+      <li>Lock = STAMP DIMENSION — flat, heavy, square-cornered, with real press travel.</li>
+    </ul>
+    <h2>MOTION</h2>
+    <ul>
+      <li>Drag: crosshair rotates 45°, chips and extension lines track the handle, hatch band follows.</li>
+      <li>Reveal: a white dimension arrow drops onto the sheet with the true value boxed; on a miss a red hatched delta zone fills between your edge and the truth with “Δ ×1.60”; an inspection stamp slams in rotated; score counts to the exact server value against a 0–100 rule.</li>
+    </ul>
+    <h2>EMBEDDED FIT (719×545)</h2>
+    <ul>
+      <li>Splash: title block 40 + problem head 130 + figure 232 + CTA row 100 — fits; the only text on the artwork is the drawing’s own notation.</li>
+      <li>Game: header 80 + dimension area 186 + lock 86 + how-to 26; 44 px handles, chips pinned above handles, nothing overlaps.</li>
+    </ul>
+    <div class="notes .rec" style="background:#2c2c31;border:1px solid #45454b;padding:14px 16px;border-radius:6px;margin-top:18px"><b>Trade-offs:</b> the most “designed” and information-rich of the three; the blue field is unmistakable in feed, but monochrome line-work gives less material warmth, and condensed headline type must be checked for Reddit’s font stack.</div>
+  </section>
+
+<script>
+  const $=id=>document.getElementById(id);
+  const pct=d=>((d-3)/4*100);
+  const fmtSci=d=>{const e=Math.floor(d);const m=Math.pow(10,d-e);return m.toFixed(1)+'×10'+sup(e)};
+  const sup=n=>{const map={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷'};return String(n).split('').map(c=>map[c]).join('')};
+  const cur={l:Math.log10(38000),u:Math.log10(62000)};
+  function paintGame(){
+    $('tLow').style.left=pct(cur.l)+'%'; $('tUp').style.left=pct(cur.u)+'%';
+    $('band').style.left=pct(cur.l)+'%'; $('band').style.width=(pct(cur.u)-pct(cur.l))+'%';
+    $('cLow').style.left=pct(cur.l)+'%'; $('cUp').style.left=pct(cur.u)+'%';
+    $('xLow').style.setProperty('--x',pct(cur.l)+'%'); $('xUp').style.setProperty('--x',pct(cur.u)+'%');
+    $('cLow').firstChild.textContent=fmtSci(cur.l)+' ';
+    $('cUp').firstChild.textContent=fmtSci(cur.u)+' ';
+  }
+  function drag(id,isLow){
+    const el=$(id),area=$('dim'); let active=false;
+    el.addEventListener('pointerdown',e=>{active=true;el.classList.add('drag');el.setPointerCapture(e.pointerId);e.preventDefault()});
+    el.addEventListener('pointermove',e=>{if(!active)return;const r=area.getBoundingClientRect();
+      let d=3+Math.min(Math.max(e.clientX-r.left,0)/r.width,1)*4;
+      if(isLow)cur.l=Math.min(d,cur.u-0.04); else cur.u=Math.max(d,cur.l+0.04); paintGame();});
+    const end=()=>{active=false;el.classList.remove('drag')};
+    el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+  }
+  drag('tLow',true); drag('tUp',false); paintGame();
+
+  const CFG={
+    caught:{bl:39.5,bw:5.3,tl:40.05,score:94.7,wr:'0.213 / 4.0'},
+    miss:{bl:22.58,bw:12.32,tl:40.05,gl:34.9,gw:5.15,score:-14.4,wr:'4.577 / 4.0'}
+  };
+  function apply(mode){
+    const c=CFG[mode],s=$('reveal'); s.dataset.mode=mode;
+    s.style.setProperty('--bl',c.bl+'%'); s.style.setProperty('--bw',c.bw+'%');
+    s.style.setProperty('--tl',c.tl+'%'); s.style.setProperty('--gl',c.gl+'%'); s.style.setProperty('--gw',c.gw+'%');
+    $('wrSub').textContent=c.wr;
+    const st=s.querySelector('.stamp'),ar=s.querySelector('.tarrow'),tb=s.querySelector('.tbox');
+    [st,ar,tb].forEach(el=>{el.classList.remove('play');void el.offsetWidth;el.classList.add('play')});
+    let t0=performance.now(); const el=$('scoreNum');
+    const tick=t=>{const p=Math.min((t-t0)/900,1);const v=c.score*(1-Math.pow(1-p,3));el.textContent=v.toFixed(1);
+      $('scoreMark').style.setProperty('--sp',Math.max(Math.min(v,100),0.5)+'%');
+      if(p<1)requestAnimationFrame(tick)};
+    requestAnimationFrame(tick);
+    document.querySelectorAll('.modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+  }
+  document.querySelectorAll('.modes button').forEach(b=>b.addEventListener('click',()=>apply(b.dataset.m)));
+  apply('caught');
+</script>
+</body>
+</html>
