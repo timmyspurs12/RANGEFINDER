@@ -1,0 +1,1115 @@
+From fad13b2d141060d5783074e1eb7db711ffe41b86 Mon Sep 17 00:00:00 2001
+From: timmyspurs12 <196032606+timmyspurs12@users.noreply.github.com>
+Date: Sat, 28 Nov 2026 13:33:49 +0000
+Subject: [PATCH 1/3] Phase B: automatic daily challenge posting (idempotent,
+ config-managed cron)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- devvit.json scheduler task 'daily-post': endpoint /internal/scheduler/
+  daily-post, cron '5 0 * * *' (00:05 UTC daily), per config-file.v1 schema
+- src/server/core/dailyPost.ts — shared ensureDailyPostForUtcDay(utcDay):
+  ONE post max per installation/UTC day via atomic Redis SET(NX) claim
+  rf:dailypost:{subredditId}:{utcDay} (TTL 48h); postId persisted immediately
+  after Reddit accepts; repeat deliveries/racing moderator actions return the
+  existing post; honest at-most-once crash-window recovery (orphan adoption
+  via getPostsByUser + stale-claim release after 15min, duplicate risk logged
+  and documented — player scoring/stats are challenge-keyed so a duplicate
+  post can never double-count); unreachable recorded posts are never
+  auto-recreated; creation failures release the claim for retry
+- postData carries ONLY {challengeId, v} — never the answer
+- /internal/menu/post-create refactored to the shared function (existing menu
+  item reused, brief poll for in-progress runs, navigate-or-toast);
+  on-app-install also routed through it so install-day uses the scheduled
+  challenge and cannot collide with the cron
+- 12 unit tests: existing-post return, no second submit, scheduled==manual
+  result, concurrency loser, lost NX race, UTC day boundaries, repeated
+  delivery, failed-creation recovery, orphan adoption, stale-retry, fresh
+  claim guard, unreachable reconciliation (unit total now 60/60)
+- Runbook section D3 (schedule, registration, verification, duplicate testing,
+  failure behaviour — documented as implemented); README verification-honesty
+  section (mocks + harness are not live-Redis proof; live verification pending
+  maintainer playtest confirmation)
+
+Battery: lint 0, tsc 0, build OK, spec 18/18, unit 60/60, harness 8/8,
+audit:bundle OK (34 answers). NOT PUSHED per instruction.
+
+Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+---
+ README.md                      |  18 +-
+ devvit.json                    |   8 +
+ docs/PLAYTEST-RUNBOOK.md       |  77 ++++++++
+ package.json                   |   2 +-
+ src/server/challenge.ts        |   2 +-
+ src/server/core/dailyPost.ts   | 325 +++++++++++++++++++++++++++++++
+ src/server/core/post.ts        |  21 ++-
+ src/server/dailyPost.test.ts   | 336 +++++++++++++++++++++++++++++++++
+ src/server/index.ts            |   2 +
+ src/server/routes/menu.ts      |  52 ++++-
+ src/server/routes/scheduler.ts |  51 +++++
+ src/server/routes/triggers.ts  |  24 ++-
+ 12 files changed, 896 insertions(+), 22 deletions(-)
+ create mode 100644 src/server/core/dailyPost.ts
+ create mode 100644 src/server/dailyPost.test.ts
+ create mode 100644 src/server/routes/scheduler.ts
+
+diff --git a/README.md b/README.md
+index 2e4c1457374fab82205d977d697828668cb2a21d..48394e5341d60319fcf7468f21fdf2c759594ed3 100644
+--- a/README.md
++++ b/README.md
+@@ -91,11 +91,19 @@ All green on the shipped commit; commands in [Development](#development).
+ | UI, headless Chromium | splash CTA fully visible at 320/400/719×545/desktop; armed confirmation; caught + missed reveals settle on the **exact** server score (negatives included); share text spoiler-free; **reload-after-submit restores the result with a live countdown, never a fresh game**; **reduced-motion lands instantly with no shake** | measured pass |
+ | Screenshots | 400px + desktop sets for splash, tutorial, measuring, armed, caught reveal, missed reveal, share sheet — committed under [`docs/screenshots/`](./screenshots) | committed |
+ 
+-Honest scope note: the Redis semantics above are proven against faithful
+-mocks and the official transactional harness, **not** against live production
+-Redis; that proof happens in the real Reddit WebView during playtest (see
+-[`docs/PLAYTEST-RUNBOOK.md`](./docs/PLAYTEST-RUNBOOK.md), including the
+-`[rangefinder:stats]` log lines that make the daily ZSET writes visible).
++### Verification honesty (read before trusting any claim here)
++
++- The automated tests above exercise **in-memory mocks and the official
++  `@devvit/test` harness**. They prove the logic, not the platform: they do
++  **not** constitute proof of live Redis behaviour.
++- Live Redis verification is performed manually, following
++  [`docs/PLAYTEST-RUNBOOK.md`](./docs/PLAYTEST-RUNBOOK.md) — including the
++  `[rangefinder:stats]` log lines that make the daily ZSET writes visible and
++  the `[rangefinder:dailypost]` lines that make daily posting visible.
++- **Live Redis verification is pending maintainer confirmation until the
++  playtest has actually been completed.** Nothing in this README claims live
++  Redis has been verified, and no claim of live verification should be read
++  into any statement above.
+ 
+ ## How to play
+ 
+diff --git a/devvit.json b/devvit.json
+index 485fa69754daa3d077ee570690e90cf4b5ddf952..131b22e601aef4b4cf36c7eaa1fe4cfd71c8859d 100644
+--- a/devvit.json
++++ b/devvit.json
+@@ -37,5 +37,13 @@
+   "scripts": {
+     "dev": "vite build --watch",
+     "build": "vite build"
++  },
++  "scheduler": {
++    "tasks": {
++      "daily-post": {
++        "endpoint": "/internal/scheduler/daily-post",
++        "cron": "5 0 * * *"
++      }
++    }
+   }
+ }
+diff --git a/docs/PLAYTEST-RUNBOOK.md b/docs/PLAYTEST-RUNBOOK.md
+index 0a571c3d801a94e26d9f7c18c23c09953469fbbe..860523659d58a1e9fd730ccae15b8f431b516067 100644
+--- a/docs/PLAYTEST-RUNBOOK.md
++++ b/docs/PLAYTEST-RUNBOOK.md
+@@ -627,6 +627,83 @@ The counter lives in Redis key `challenge:{challengeId}:scores`
+ (member = user id, score = exact server S, TTL 35 days) and is erased by
+ `POST /api/erase` alongside the submission.
+ 
++## D3. Automatic daily posting (Stage 3.7 phase B — ACTUAL implementation)
++
++**How it works (as implemented, not hypothetical):**
++
++- `devvit.json` registers ONE configuration-managed recurring task:
++
++  ```json
++  "scheduler": {
++    "tasks": {
++      "daily-post": { "endpoint": "/internal/scheduler/daily-post", "cron": "5 0 * * *" }
++    }
++  }
++  ```
++
++  Standard five-part UNIX cron, interpreted in **UTC**: the task fires at
++  **00:05 UTC every day**. No runtime scheduler API is used; registration is
++  the `scheduler.tasks` block above (schema: `config-file.v1.json`,
++  `scheduler` property — verified against `@devvit/shared-types` 0.15.4).
++- The platform POSTs a `TaskRequest {name, data}` to
++  `/internal/scheduler/daily-post` (per `@devvit/scheduler` typings). The
++  endpoint computes the canonical UTC day (`YYYY-MM-DD`) from the server
++  clock, resolves the challenge with the existing `scheduledChallengeIdFor()`
++  helper, and calls `ensureDailyPostForUtcDay()`.
++- `ensureDailyPostForUtcDay(utcDay)` (in `src/server/core/dailyPost.ts`) is
++  the ONLY post-creation path. It is called by the scheduled task, the
++  moderator menu (`/internal/menu/post-create` — the pre-existing
++  "Create Rangefinder challenge post" item, unchanged in devvit.json), and
++  the `on-app-install` trigger. One post maximum per installation and UTC
++  day via an atomic Redis `SET(NX)` claim key
++  `rf:dailypost:{subredditId}:{utcDay}` (TTL 48 h). The post's
++  `postData` carries ONLY `{challengeId, v}` — never the answer.
++- A repeat delivery, a second moderator click, or a moderator click DURING a
++  scheduled run returns the existing post (the menu navigates to it with an
++  "already created" toast); no duplicate is submitted.
++
++**Verifying the task is configured:**
++
++1. `devvit.json` contains the `scheduler.tasks.daily-post` block (above).
++2. In the playtest session, `npx devvit logs -s 30m` around 00:05 UTC shows:
++   `[rangefinder:dailypost] scheduler task "daily-post" firing for UTC day YYYY-MM-DD`
++   followed by `scheduler outcome for YYYY-MM-DD: created|exists …`.
++
++**Confirming the day's post and challenge id:**
++
++- The server log line above names the challenge id and post id.
++- On the post itself: view-source/devtools shows `postData.challengeId`;
++  the client's question is the one mapped by `scheduledChallengeIdFor(day)`
++  in `src/server/challenge.ts` (rotation epoch `2026-11-26`).
++
++**Testing duplicate prevention safely:**
++
++- Invoke the moderator menu item twice for the same UTC day. Expected: the
++  first returns "Rangefinder post for YYYY-MM-DD ready"; the second navigates
++  to the SAME post with "already created — navigating to it". The log shows a
++  single `created` outcome for the day.
++- Menu clicks exercise the exact same `ensureDailyPostForUtcDay()` the cron
++  uses; the cron delivery itself cannot be forced from a dev machine — its
++  redelivery idempotence is covered by unit tests (`dailyPost.test.ts`) and
++  confirmed by observing exactly one post per day over consecutive playtest
++  days.
++
++**Failure behaviour:**
++
++- Post creation fails (Reddit rejects/downtime): the claim key is RELEASED;
++  the next scheduled run or moderator click retries. Nothing is reported as
++  created when it was not.
++- Crash between Reddit accepting the post and persisting its id: the module
++  is **at-most-once, not exactly-once**. Recovery: orphan adoption (the app
++  account's recent posts are enumerated and a post carrying the day's
++  challenge id is adopted); if adoption is unavailable, a stale claim
++  (> 15 min) is released and a replacement post may duplicate the orphaned
++  one. This is cosmetic only — player scoring/stats are keyed by challenge,
++  not post — and is logged loudly, never hidden.
++- A recorded post that Reddit cannot serve (deleted): status `unreachable`;
++  NO automatic recreation (avoids fighting moderator intent); the moderator
++  menu reports the situation instead.
++
+ ## E. Results record (fill in during/after the session)
+ 
+ ```
+diff --git a/package.json b/package.json
+index e517af8d51abef6c459e56cc0b7dc8423b7d8513..371004e0febcba41d2dbced18929ef30ace2f6ea 100644
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,7 @@
+     "build": "vite build",
+     "dev": "devvit playtest",
+     "typecheck": "tsc --build",
+-    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/server/scoring.test.ts src/server/store.test.ts src/server/record.test.ts src/shared/preview.test.ts src/shared/tiers.test.ts",
++    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test src/server/scoring.test.ts src/server/store.test.ts src/server/record.test.ts src/shared/preview.test.ts src/shared/tiers.test.ts src/server/dailyPost.test.ts",
+     "test:spec": "node --test spec/scoring.test.cjs",
+     "test": "npm run test:spec && npm run test:unit && npm run test:harness && npm run audit:bundle",
+     "lint": "eslint 'src/**/*.{ts,tsx}'",
+diff --git a/src/server/challenge.ts b/src/server/challenge.ts
+index 7529422404a1e4a8ab3762c7ef019943eba1ab9e..291433b588baba9f25c0212c04e5266a62cd88b3 100644
+--- a/src/server/challenge.ts
++++ b/src/server/challenge.ts
+@@ -15,7 +15,7 @@
+ // pinned to the exact year of the measurement.
+ 
+ import { context } from '@devvit/web/server';
+-import { formatQuantity } from '../shared/api';
++import { formatQuantity } from '../shared/api.ts';
+ import type { ChallengePublic } from '../shared/api';
+ 
+ export type ChallengeDef = {
+diff --git a/src/server/core/dailyPost.ts b/src/server/core/dailyPost.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..97f91352c399fb1e2622c31b658999c24c381870
+--- /dev/null
++++ b/src/server/core/dailyPost.ts
+@@ -0,0 +1,325 @@
++// Daily-post idempotency (Stage 3.7 — daily posting phase B).
++//
++// One post maximum per subreddit installation and UTC day. BOTH the
++// devvit.json-scheduled task (/internal/scheduler/daily-post) and the
++// moderator menu fallback (/internal/menu/post-create) call the SAME function:
++// ensureDailyPostForUtcDay(). The on-app-install trigger also routes through
++// it so an installation never ends up with two different day-X posts.
++//
++// IDEMPOTENCY DESIGN (honest scope):
++// • Claim: Redis key `rf:dailypost:{subredditId}:{utcDay}` claimed with
++//   SET(NX) + TTL — an atomic single-step claim; concurrent scheduled and
++//   manual callers cannot both create (the loser re-reads and never creates).
++// • The claim value persists the postId immediately after Reddit accepts the
++//   submission; a repeat delivery then returns the existing post.
++// • FAILURE WINDOW: a crash between Reddit accepting the post and the postId
++//   persistence leaves a claim with no postId. This implementation is
++//   therefore AT-MOST-ONCE, not exactly-once. Recovery is best-effort:
++//   (a) orphan adoption — the claim owner's recent posts (app account) are
++//       enumerated and one carrying the day's challengeId is adopted;
++//   (b) stale-claim retry — a postId-less claim older than STALE_MS is
++//       treated as dead and a replacement is created.
++//   If the orphaned post was created but cannot be found by (a), the retry in
++//   (b) creates a duplicate post. Cosmetic only — player-result idempotency
++//   keys on `challenge:{id}` are post-independent, so scoring and daily stats
++//   can never double-count across duplicate posts. Not hidden: callers log
++//   every outcome and docs/PLAYTEST-RUNBOOK.md documents the window.
++
++import { context, redis, reddit } from '@devvit/web/server';
++import { scheduledChallengeIdFor } from '../challenge.ts';
++import { createPost } from './post.ts';
++
++export const DAILY_POST_TITLE = 'Rangefinder — can you estimate reality?';
++
++/** Claim TTL: covers the day plus a manual retry window (2 days). */
++export const DAILY_POST_CLAIM_TTL_SECONDS = 48 * 3600;
++/**
++ * A postId-less claim older than this is treated as dead (the creating run
++ * crashed). Short enough for same-day recovery, long enough that a merely
++ * slow run is never double-created.
++ */
++export const DAILY_POST_STALE_MS = 15 * 60 * 1000;
++
++export type DailyPostStatus =
++  | 'created' // this call submitted the post
++  | 'exists' // a post for the day already exists (created earlier)
++  | 'in-progress' // another run holds a fresh claim; no postId yet
++  | 'unreachable' // a recorded postId exists but Reddit cannot serve it
++  | 'invalid-day' // utcDay argument malformed
++  | 'error'; // post creation failed; claim released for retry
++
++export type DailyPostResult = {
++  status: DailyPostStatus;
++  /** The day's post id when known (null while in-progress/failed). */
++  postId: string | null;
++  /** The challenge scheduled for the day (empty for invalid-day). */
++  challengeId: string;
++  message?: string;
++};
++
++export type DailyPostLike = {
++  id: string;
++  getPostData(): Promise<{ challengeId?: unknown } | undefined>;
++};
++
++export interface DailyPostDeps {
++  redis: {
++    get(key: string): Promise<string | undefined>;
++    set(
++      key: string,
++      value: string,
++      options?: { nx?: boolean; expiration?: Date }
++    ): Promise<unknown>;
++    del(key: string): Promise<unknown>;
++  };
++  reddit: {
++    submitCustomPost(opts: {
++      title: string;
++      postData: { challengeId: string; v: number };
++    }): Promise<{ id: string }>;
++    getPostById(id: string): Promise<DailyPostLike>;
++    /** Optional: only used for orphan adoption in the crash window. */
++    getPostsByUser?(opts: {
++      username: string;
++      sort?: 'new';
++      timeframe?: 'day' | 'week';
++      limit?: number;
++    }): Promise<{ all(): Promise<DailyPostLike[]> }>;
++  };
++  /** Installation namespace for the claim key (subreddit id preferred). */
++  namespace: string;
++  /** App account username used to enumerate orphan posts (adoption path). */
++  appUsername: string;
++}
++
++/** Production deps from the ambient Devvit server clients. */
++function defaultDeps(): DailyPostDeps {
++  return {
++    redis,
++    reddit: reddit as unknown as DailyPostDeps['reddit'],
++    namespace: context.subredditId || context.subredditName || 'unknown',
++    appUsername: context.appSlug || context.appName,
++  };
++}
++
++type Claim = { challengeId: string; postId: string | null; at: number };
++
++function parseClaim(raw: string): Claim | null {
++  try {
++    const parsed = JSON.parse(raw) as Partial<Claim>;
++    if (
++      typeof parsed.challengeId !== 'string' ||
++      typeof parsed.at !== 'number' ||
++      !(parsed.postId === null || typeof parsed.postId === 'string')
++    ) {
++      return null;
++    }
++    return parsed as Claim;
++  } catch {
++    return null;
++  }
++}
++
++export function dailyPostClaimKey(namespace: string, utcDay: string): string {
++  return `rf:dailypost:${namespace}:${utcDay}`;
++}
++
++/** The production Redis client resolves SET NX to 'OK' or an empty result. */
++function claimSucceeded(setResponse: unknown): boolean {
++  return setResponse === 'OK' || setResponse === true || setResponse === 1;
++}
++
++export type EnsureOptions = {
++  /** Why the call was made — logging only; never affects the outcome. */
++  reason?: 'scheduler' | 'menu' | 'install';
++  now?: number;
++  deps?: DailyPostDeps;
++};
++
++/**
++ * Ensure exactly one Rangefinder challenge post exists for `utcDay`
++ * (format YYYY-MM-DD, UTC). Returns the existing post when one is recorded;
++ * creates one only when no live claim or recorded post stands in the way.
++ */
++export async function ensureDailyPostForUtcDay(
++  utcDay: string,
++  opts: EnsureOptions = {}
++): Promise<DailyPostResult> {
++  if (!/^\d{4}-\d{2}-\d{2}$/.test(utcDay)) {
++    return {
++      status: 'invalid-day',
++      postId: null,
++      challengeId: '',
++      message: `utcDay must be YYYY-MM-DD (UTC), got ${JSON.stringify(utcDay)}`,
++    };
++  }
++  const deps = opts.deps ?? defaultDeps();
++  const now = opts.now ?? Date.now();
++  const challengeId = scheduledChallengeIdFor(utcDay);
++  const key = dailyPostClaimKey(deps.namespace, utcDay);
++  const reason = opts.reason ?? 'scheduler';
++
++  for (let attempt = 0; attempt < 2; attempt++) {
++    const raw = await deps.redis.get(key);
++    if (typeof raw === 'string' && raw.length > 0) {
++      const existing = await handleExistingClaim(deps, key, raw, challengeId, now, reason);
++      if (existing !== null) return existing;
++      // null = the claim was stale/corrupt and has been released — loop to claim.
++      continue;
++    }
++
++    // Atomic single-step claim: only ONE concurrent caller wins.
++    const claim = JSON.stringify({ challengeId, postId: null, at: now } satisfies Claim);
++    const setResponse = await deps.redis.set(key, claim, {
++      nx: true,
++      expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000),
++    });
++    if (!claimSucceeded(setResponse)) {
++      continue; // lost the race — re-read the winner's claim once
++    }
++
++    try {
++      const post = await createPost(challengeId, deps.reddit.submitCustomPost.bind(deps.reddit));
++      await deps.redis.set(
++        key,
++        JSON.stringify({ challengeId, postId: post.id, at: now } satisfies Claim),
++        { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++      );
++      console.log(
++        `[rangefinder:dailypost] ${reason} created post ${post.id} for ${utcDay} (challenge ${challengeId}) in ${deps.namespace}`
++      );
++      return { status: 'created', postId: post.id, challengeId };
++    } catch (error) {
++      // Release the claim so any later run can retry creation.
++      await deps.redis.del(key).catch(() => undefined);
++      const message = error instanceof Error ? error.message : String(error);
++      console.error(
++        `[rangefinder:dailypost] ${reason} post creation FAILED for ${utcDay} (${challengeId}): ${message} — claim released`
++      );
++      return { status: 'error', postId: null, challengeId, message };
++    }
++  }
++
++  // Both attempts lost the race to a fresh claim.
++  return {
++    status: 'in-progress',
++    postId: null,
++    challengeId,
++    message: 'Another run is creating today’s post; retry shortly to retrieve it.',
++  };
++}
++
++/** Returns a result, or null when the claim is dead/corrupt and was released. */
++async function handleExistingClaim(
++  deps: DailyPostDeps,
++  key: string,
++  raw: string,
++  challengeId: string,
++  now: number,
++  reason: EnsureOptions['reason']
++): Promise<DailyPostResult | null> {
++  const parsed = parseClaim(raw);
++  if (!parsed || parsed.challengeId !== challengeId) {
++    console.warn(
++      `[rangefinder:dailypost] corrupt/mismatched claim at ${key} (${raw.slice(0, 120)}) — releasing for recovery`
++    );
++    await deps.redis.del(key).catch(() => undefined);
++    return null;
++  }
++  if (parsed.postId) {
++    return verifyRecordedPost(deps, parsed.postId, challengeId);
++  }
++  const age = now - parsed.at;
++  if (age < DAILY_POST_STALE_MS) {
++    return {
++      status: 'in-progress',
++      postId: null,
++      challengeId,
++      message: 'Post creation is already in progress.',
++    };
++  }
++  // Stale postId-less claim: the creating run died. Try to adopt the orphan,
++  // otherwise release the claim and create a replacement (at-most-once).
++  const adopted = await tryAdoptOrphan(deps, challengeId, reason);
++  if (adopted !== null) {
++    await deps.redis.set(
++      key,
++      JSON.stringify({ challengeId, postId: adopted, at: parsed.at } satisfies Claim),
++      { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++    );
++    return { status: 'exists', postId: adopted, challengeId };
++  }
++  console.warn(
++    `[rangefinder:dailypost] stale postId-less claim for challenge ${challengeId} released — a replacement post may duplicate an orphaned one (documented at-most-once limitation)`
++  );
++  await deps.redis.del(key).catch(() => undefined);
++  return null;
++}
++
++/** Reconcile a recorded postId against Reddit (supported API: getPostById). */
++async function verifyRecordedPost(
++  deps: DailyPostDeps,
++  postId: string,
++  challengeId: string
++): Promise<DailyPostResult> {
++  try {
++    const post = await deps.reddit.getPostById(postId);
++    if (!post || typeof post.id !== 'string') throw new Error('malformed post response');
++    return { status: 'exists', postId, challengeId };
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    console.warn(
++      `[rangefinder:dailypost] recorded post ${postId} is unreachable (${message}) — NOT recreating automatically`
++    );
++    return {
++      status: 'unreachable',
++      postId,
++      challengeId,
++      message:
++        'Today’s post record exists but the post is unreachable (deleted or removed). No replacement was created; wait for the claim to expire or investigate manually.',
++    };
++  }
++}
++
++/**
++ * Crash-window recovery: enumerate the app account's recent posts and adopt
++ * one carrying the day's challengeId. Best effort — returns null when the
++ * enumeration API is unavailable, fails, or finds nothing.
++ */
++async function tryAdoptOrphan(
++  deps: DailyPostDeps,
++  challengeId: string,
++  reason: EnsureOptions['reason']
++): Promise<string | null> {
++  if (!deps.reddit.getPostsByUser) return null;
++  try {
++    const listing = await deps.reddit.getPostsByUser({
++      username: deps.appUsername,
++      sort: 'new',
++      timeframe: 'week',
++      limit: 25,
++    });
++    const posts = await listing.all();
++    for (const post of posts) {
++      try {
++        const data = await post.getPostData();
++        if (data && data.challengeId === challengeId) {
++          console.log(
++            `[rangefinder:dailypost] ${reason} adopted orphan post ${post.id} for challenge ${challengeId} (crash-window recovery)`
++          );
++          return post.id;
++        }
++      } catch {
++        // Unreadable post data — skip this candidate.
++      }
++    }
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    console.warn(
++      `[rangefinder:dailypost] orphan adoption unavailable (getPostsByUser as u/${deps.appUsername}): ${message}`
++    );
++  }
++  return null;
++}
++
++export { createPost };
+diff --git a/src/server/core/post.ts b/src/server/core/post.ts
+index b1c25114a5619c4480994ba410fc72e313f1f362..470057c4d1d129f440bdc96e94adf5a98c12b6d4 100644
+--- a/src/server/core/post.ts
++++ b/src/server/core/post.ts
+@@ -1,11 +1,24 @@
+ import { reddit } from '@devvit/web/server';
+-import { DEFAULT_CHALLENGE_ID } from '../challenge';
++import { DEFAULT_CHALLENGE_ID } from '../challenge.ts';
+ 
+-export const createPost = async () => {
+-  return await reddit.submitCustomPost({
++/** Narrow submit surface — the ambient client satisfies it; tests inject mocks. */
++export type SubmitCustomPostLike = (opts: {
++  title: string;
++  postData: { challengeId: string; v: number };
++}) => Promise<{ id: string }>;
++
++/**
++ * Creates the daily interactive post carrying ONLY the challenge id and a
++ * version tag in postData — never the answer or anything answer-derived.
++ */
++export const createPost = async (
++  challengeId: string = DEFAULT_CHALLENGE_ID,
++  submit: SubmitCustomPostLike = reddit as unknown as SubmitCustomPostLike
++) => {
++  return await submit({
+     title: 'Rangefinder — can you estimate reality?',
+     postData: {
+-      challengeId: DEFAULT_CHALLENGE_ID,
++      challengeId,
+       v: 1,
+     },
+   });
+diff --git a/src/server/dailyPost.test.ts b/src/server/dailyPost.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..56d24c8baba4553dc55c0dc7a1936db34f5d952a
+--- /dev/null
++++ b/src/server/dailyPost.test.ts
+@@ -0,0 +1,336 @@
++// Unit tests for the shared idempotent daily-post module (Stage 3.7 phase B).
++//
++// HONEST SCOPE NOTE (same as store.test.ts): these tests exercise the claim,
++// recovery and dedup logic against faithful in-memory mocks. They are NOT
++// live-Redis/live-Reddit proof — live behaviour is verified in playtest
++// (docs/PLAYTEST-RUNBOOK.md). The atomicity of the NX claim itself must be
++// confirmed against real Redis during the playtest milestone.
++//
++// Run: npm run test:unit
++
++import test from 'node:test';
++import assert from 'node:assert/strict';
++
++import {
++  DAILY_POST_CLAIM_TTL_SECONDS,
++  DAILY_POST_STALE_MS,
++  dailyPostClaimKey,
++  ensureDailyPostForUtcDay,
++} from './core/dailyPost.ts';
++import type { DailyPostDeps, DailyPostLike } from './core/dailyPost.ts';
++import { scheduledChallengeIdFor } from './challenge.ts';
++
++const NS = 't5_testsub';
++const APP = 'rangefinder-test';
++const DAY0 = '2026-11-26'; // rotation epoch → earth-circumference-v1
++const DAY1 = '2026-11-27'; // → burj-khalifa-height-v1
++const NOW = Date.UTC(2026, 10, 26, 0, 5, 0); // 2026-11-26 00:05:00 UTC
++
++class MockRedis {
++  strings = new Map<string, string>();
++  expiries = new Map<string, number>();
++  /** When true, SET NX always fails (simulates losing an atomic race). */
++  blockNx = false;
++
++  async get(key: string): Promise<string | undefined> {
++    return this.strings.get(key);
++  }
++  async set(
++    key: string,
++    value: string,
++    options?: { nx?: boolean; expiration?: Date }
++  ): Promise<unknown> {
++    if (options?.nx && (this.strings.has(key) || this.blockNx)) return undefined;
++    this.strings.set(key, value);
++    if (options?.expiration) this.expiries.set(key, options.expiration.getTime());
++    return 'OK';
++  }
++  async del(key: string): Promise<unknown> {
++    return this.strings.delete(key) ? 1 : 0;
++  }
++}
++
++class MockReddit {
++  /** Captured submitCustomPost calls (opts + assigned id). */
++  submits: Array<{ title: string; postData: { challengeId: string; v: number } }> = [];
++  posts = new Map<string, { challengeId: string }>();
++  /** When set, getPostById throws for every id (simulates unreachable). */
++  failGetPostById = false;
++  /** Orphans visible to getPostsByUser (username filter honoured). */
++  visibleToUser: string | null = APP;
++  nextId = 1;
++
++  async submitCustomPost(opts: {
++    title: string;
++    postData: { challengeId: string; v: number };
++  }): Promise<{ id: string }> {
++    this.submits.push(opts);
++    const id = `t3_${this.nextId++}`;
++    this.posts.set(id, { challengeId: opts.postData.challengeId });
++    return { id };
++  }
++
++  async getPostById(id: string): Promise<DailyPostLike> {
++    if (this.failGetPostById) throw new Error('post not found (mock)');
++    const post = this.posts.get(id);
++    if (!post) throw new Error('post not found (mock)');
++    return {
++      id,
++      getPostData: async () => ({ challengeId: post.challengeId }),
++    };
++  }
++
++  getPostsByUser(opts: {
++    username: string;
++    sort?: 'new';
++    timeframe?: 'day' | 'week';
++    limit?: number;
++  }): { all(): Promise<DailyPostLike[]> } {
++    return {
++      all: async () => {
++        if (this.visibleToUser !== opts.username) {
++          throw new Error(`redditor ${opts.username} not found (mock)`);
++        }
++        return [...this.posts.entries()].map(([id, post]) => ({
++          id,
++          getPostData: async () => ({ challengeId: post.challengeId }),
++        }));
++      },
++    };
++  }
++}
++
++function makeDeps(opts?: { reddit?: MockReddit; redis?: MockRedis }): DailyPostDeps & {
++  redditMock: MockReddit;
++  redisMock: MockRedis;
++} {
++  const redisMock = opts?.redis ?? new MockRedis();
++  const redditMock = opts?.reddit ?? new MockReddit();
++  const deps: DailyPostDeps = {
++    redis: redisMock as unknown as DailyPostDeps['redis'],
++    reddit: redditMock as unknown as DailyPostDeps['reddit'],
++    namespace: NS,
++    appUsername: APP,
++  };
++  return { ...deps, redditMock, redisMock } as DailyPostDeps & {
++    redditMock: MockReddit;
++    redisMock: MockRedis;
++  };
++}
++
++test('invalid utcDay format is rejected before any Redis or Reddit call', async () => {
++  const { redditMock } = makeDeps();
++  const result = await ensureDailyPostForUtcDay('nov 26', {
++    deps: mkDeps(redditMock),
++    now: NOW,
++  });
++  assert.equal(result.status, 'invalid-day');
++  assert.equal(result.postId, null);
++  assert.equal(redditMock.submits.length, 0);
++});
++
++// helper bridging the mock pair into the deps type
++function mkDeps(redditMock: MockReddit, redisMock?: MockRedis): DailyPostDeps {
++  return {
++    redis: (redisMock ?? new MockRedis()) as unknown as DailyPostDeps['redis'],
++    reddit: redditMock as unknown as DailyPostDeps['reddit'],
++    namespace: NS,
++    appUsername: APP,
++  };
++}
++
++test('creates the day’s post with the scheduled challenge and posts only public data', async () => {
++  const { redditMock, redisMock } = makeDeps();
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW,
++  });
++  assert.equal(result.status, 'created');
++  assert.equal(result.postId, 't3_1');
++  assert.equal(result.challengeId, scheduledChallengeIdFor(DAY0));
++  assert.equal(redditMock.submits.length, 1);
++  // postData carries ONLY the challenge id and a version tag — never the answer.
++  assert.deepEqual(redditMock.submits[0]!.postData, {
++    challengeId: 'earth-circumference-v1',
++    v: 1,
++  });
++  // claim persisted with the postId and a TTL
++  const raw = await redisMock.get(dailyPostClaimKey(NS, DAY0));
++  assert.ok(raw);
++  const claim = JSON.parse(raw!) as { challengeId: string; postId: string | null; at: number };
++  assert.equal(claim.postId, 't3_1');
++  assert.equal(claim.challengeId, 'earth-circumference-v1');
++  assert.equal(redisMock.expiries.get(dailyPostClaimKey(NS, DAY0)), NOW + DAILY_POST_CLAIM_TTL_SECONDS * 1000);
++});
++
++test('repeated scheduler delivery returns the existing post — no second submission', async () => {
++  const { redditMock, redisMock } = makeDeps();
++  const deps = mkDeps(redditMock, redisMock);
++  const first = await ensureDailyPostForUtcDay(DAY0, { deps, now: NOW });
++  assert.equal(first.status, 'created');
++  const second = await ensureDailyPostForUtcDay(DAY0, { deps, now: NOW + 60_000 });
++  assert.equal(second.status, 'exists');
++  assert.equal(second.postId, first.postId);
++  assert.equal(redditMock.submits.length, 1); // idempotent
++});
++
++test('scheduled and manual paths share ONE idempotency domain — same result, no duplicate', async () => {
++  const { redditMock, redisMock } = makeDeps();
++  const deps = mkDeps(redditMock, redisMock);
++  const scheduled = await ensureDailyPostForUtcDay(DAY0, { deps, reason: 'scheduler', now: NOW });
++  const manual = await ensureDailyPostForUtcDay(DAY0, { deps, reason: 'menu', now: NOW + 500 });
++  assert.equal(manual.status, 'exists');
++  assert.equal(manual.postId, scheduled.postId);
++  assert.equal(manual.challengeId, scheduled.challengeId);
++  assert.equal(redditMock.submits.length, 1);
++});
++
++test('concurrent runs: a fresh postId-less claim blocks creation (atomic-claim loser)', async () => {
++  const { redditMock, redisMock } = makeDeps();
++  // The "winner" claimed but has not persisted a postId yet.
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({ challengeId: 'earth-circumference-v1', postId: null, at: NOW })
++  );
++  const loser = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW + 1000, // 1s after the claim — fresh
++  });
++  assert.equal(loser.status, 'in-progress');
++  assert.equal(loser.postId, null);
++  assert.equal(redditMock.submits.length, 0); // never created a second post
++});
++
++test('lost NX race: the caller re-reads the winner and does not create', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  // The winner already holds a completed claim; the loser reads it before any
++  // NX attempt would be made.
++  redditMock.posts.set('t3_42', { challengeId: 'earth-circumference-v1' });
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({ challengeId: 'earth-circumference-v1', postId: 't3_42', at: NOW })
++  );
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW + 1000,
++  });
++  assert.equal(result.status, 'exists');
++  assert.equal(result.postId, 't3_42');
++  assert.equal(redditMock.submits.length, 0);
++});
++
++test('UTC date boundaries: consecutive days create distinct posts and distinct claims', async () => {
++  const { redditMock, redisMock } = makeDeps();
++  const deps = mkDeps(redditMock, redisMock);
++  const day0 = await ensureDailyPostForUtcDay(DAY0, { deps, now: NOW });
++  const day1 = await ensureDailyPostForUtcDay(DAY1, { deps, now: NOW + 86_400_000 });
++  assert.equal(day0.challengeId, 'earth-circumference-v1');
++  assert.equal(day1.challengeId, 'burj-khalifa-height-v1'); // per verified rotation
++  assert.notEqual(day0.postId, day1.postId);
++  assert.ok(await redisMock.get(dailyPostClaimKey(NS, DAY0)));
++  assert.ok(await redisMock.get(dailyPostClaimKey(NS, DAY1)));
++  assert.equal(redditMock.submits.length, 2);
++  // Same day again → still one post per day.
++  const day1Again = await ensureDailyPostForUtcDay(DAY1, { deps, now: NOW + 90_000_000 });
++  assert.equal(day1Again.status, 'exists');
++  assert.equal(day1Again.postId, day1.postId);
++  assert.equal(redditMock.submits.length, 2);
++});
++
++test('failed creation releases the claim — a later run can retry', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  // Make the FIRST submission fail.
++  redditMock.submitCustomPost = async (opts) => {
++    throw new Error('simulated submit failure');
++  };
++  const failed = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW,
++  });
++  assert.equal(failed.status, 'error');
++  assert.equal(failed.postId, null);
++  assert.equal(await redisMock.get(dailyPostClaimKey(NS, DAY0)), undefined); // released
++  // Recovery: a working client creates the post on the next call.
++  const working = new MockReddit();
++  const recovered = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(working, redisMock),
++    now: NOW + 30_000,
++  });
++  assert.equal(recovered.status, 'created');
++  assert.equal(recovered.postId, 't3_1');
++});
++
++test('stale claim + enumeration finds the orphan → adopted, no duplicate', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  // Crash window: the orphan post WAS created but the claim never got the id.
++  redditMock.posts.set('t3_orphan', { challengeId: 'earth-circumference-v1' });
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({ challengeId: 'earth-circumference-v1', postId: null, at: NOW - DAILY_POST_STALE_MS - 1000 })
++  );
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW,
++  });
++  assert.equal(result.status, 'exists');
++  assert.equal(result.postId, 't3_orphan');
++  assert.equal(redditMock.submits.length, 0); // adopted, not recreated
++  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as { postId: string };
++  assert.equal(claim.postId, 't3_orphan');
++});
++
++test('stale claim + unavailable enumeration → replacement created (documented at-most-once)', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  redditMock.visibleToUser = 'someone-else'; // getPostsByUser fails: convention mismatch
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({ challengeId: 'earth-circumference-v1', postId: null, at: NOW - DAILY_POST_STALE_MS - 1000 })
++  );
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW,
++  });
++  assert.equal(result.status, 'created');
++  assert.equal(redditMock.submits.length, 1);
++});
++
++test('fresh claim (not stale) never triggers recovery or adoption', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  redditMock.posts.set('t3_orphan', { challengeId: 'earth-circumference-v1' });
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({
++      challengeId: 'earth-circumference-v1',
++      postId: null,
++      at: NOW - DAILY_POST_STALE_MS + 5000, // still fresh
++    })
++  );
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW,
++  });
++  assert.equal(result.status, 'in-progress');
++  assert.equal(redditMock.submits.length, 0);
++});
++
++test('recorded postId that Reddit cannot serve → unreachable, never recreated automatically', async () => {
++  const redisMock = new MockRedis();
++  const redditMock = new MockReddit();
++  redditMock.failGetPostById = true;
++  await redisMock.set(
++    dailyPostClaimKey(NS, DAY0),
++    JSON.stringify({ challengeId: 'earth-circumference-v1', postId: 't3_gone', at: NOW })
++  );
++  const result = await ensureDailyPostForUtcDay(DAY0, {
++    deps: mkDeps(redditMock, redisMock),
++    now: NOW + 1000,
++  });
++  assert.equal(result.status, 'unreachable');
++  assert.equal(result.postId, 't3_gone');
++  assert.equal(redditMock.submits.length, 0);
++});
+diff --git a/src/server/index.ts b/src/server/index.ts
+index bcc306058f17df6ec0d9f80cd9a2d3deedfe05ea..8c47e9b084143cbbf921c4a815fa3eb3d599e5b9 100644
+--- a/src/server/index.ts
++++ b/src/server/index.ts
+@@ -3,12 +3,14 @@ import { serve } from '@hono/node-server';
+ import { createServer, getServerPort } from '@devvit/web/server';
+ import { api } from './routes/api';
+ import { menu } from './routes/menu';
++import { scheduler } from './routes/scheduler';
+ import { triggers } from './routes/triggers';
+ 
+ const app = new Hono();
+ const internal = new Hono();
+ 
+ internal.route('/menu', menu);
++internal.route('/scheduler', scheduler);
+ internal.route('/triggers', triggers);
+ 
+ app.route('/api', api);
+diff --git a/src/server/routes/menu.ts b/src/server/routes/menu.ts
+index 8f96cab2ab1e3a9d40fa941a74eba43ab2a0e34b..78455a37e7f2602724d172dd9f7815ab669f971b 100644
+--- a/src/server/routes/menu.ts
++++ b/src/server/routes/menu.ts
+@@ -1,18 +1,58 @@
++// Moderator menu fallback (Stage 3.7 phase B refactor).
++// The devvit.json menu item "Create Rangefinder challenge post" (unchanged)
++// routes here; the handler now delegates to the SHARED idempotent
++// ensureDailyPostForUtcDay() — the exact function the scheduled task calls —
++// so a moderator action can never create a second post for a day that the
++// scheduler (or another moderator) already covered.
+ import { Hono } from 'hono';
+ import type { UiResponse } from '@devvit/web/shared';
+ import { context } from '@devvit/web/server';
+-import { createPost } from '../core/post';
++import { utcDayKey } from '../../shared/dayKey';
++import { ensureDailyPostForUtcDay } from '../core/dailyPost';
+ 
+ export const menu = new Hono();
+ 
++const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
++
+ menu.post('/post-create', async (c) => {
+   try {
+-    const post = await createPost();
++    const utcDay = utcDayKey();
++    let result = await ensureDailyPostForUtcDay(utcDay, { reason: 'menu' });
++    // If the scheduled run holds a fresh claim, poll briefly for its postId so
++    // the moderator is navigated to the post instead of a "wait" toast.
++    for (let i = 0; i < 3 && result.status === 'in-progress'; i++) {
++      await sleep(1000);
++      result = await ensureDailyPostForUtcDay(utcDay, { reason: 'menu' });
++    }
++
++    if (result.postId) {
++      const suffix =
++        result.status === 'created'
++          ? ''
++          : ' (already created — navigating to it)';
++      return c.json<UiResponse>(
++        {
++          navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${result.postId}`,
++          showToast: `Rangefinder post for ${utcDay} ready${suffix}`,
++        },
++        200
++      );
++    }
++    if (result.status === 'in-progress') {
++      return c.json<UiResponse>(
++        { showToast: 'Post creation is already in progress — open the post in a moment.' },
++        200
++      );
++    }
++    if (result.status === 'unreachable') {
++      return c.json<UiResponse>(
++        { showToast: `Today’s post record exists but the post is unreachable: ${result.message}` },
++        200
++      );
++    }
+     return c.json<UiResponse>(
+-      {
+-        navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${post.id}`,
+-      },
+-      200
++      { showToast: `Failed to create post: ${result.message ?? result.status}` },
++      400
+     );
+   } catch (error) {
+     console.error(`Error creating post: ${error}`);
+diff --git a/src/server/routes/scheduler.ts b/src/server/routes/scheduler.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d26717a9f2fc81aefa11eb467e93f0bce063d328
+--- /dev/null
++++ b/src/server/routes/scheduler.ts
+@@ -0,0 +1,51 @@
++// Scheduled daily post (Stage 3.7 phase B). Registered in devvit.json:
++//
++//   "scheduler": {
++//     "tasks": {
++//       "daily-post": { "endpoint": "/internal/scheduler/daily-post", "cron": "5 0 * * *" }
++//     }
++//   }
++//
++// The platform POSTs a TaskRequest {name, data} (per @devvit/scheduler
++// typings) to this endpoint at 00:05 UTC every day. The canonical UTC day is
++// computed from the server clock at execution time — the request body is
++// parsed for logging only and is NEVER trusted for the day or the challenge.
++// Idempotency lives in ensureDailyPostForUtcDay(): repeated deliveries,
++// crashes and racing moderator actions can never create a second post.
++import { Hono } from 'hono';
++import { utcDayKey } from '../../shared/dayKey';
++import { ensureDailyPostForUtcDay } from '../core/dailyPost';
++
++export const scheduler = new Hono();
++
++scheduler.post('/daily-post', async (c) => {
++  // Log-only parse of the TaskRequest body (never trusted for scheduling input).
++  let bodyName = 'unknown';
++  try {
++    const body = await c.req.json<{ name?: string }>();
++    bodyName = typeof body?.name === 'string' ? body.name : 'unknown';
++  } catch {
++    // no/invalid body — the scheduled task contract does not require one
++  }
++
++  const utcDay = utcDayKey();
++  console.log(
++    `[rangefinder:dailypost] scheduler task "${bodyName}" firing for UTC day ${utcDay}`
++  );
++
++  try {
++    const result = await ensureDailyPostForUtcDay(utcDay, { reason: 'scheduler' });
++    console.log(
++      `[rangefinder:dailypost] scheduler outcome for ${utcDay}: ${result.status}` +
++        (result.postId ? ` post=${result.postId}` : '') +
++        ` challenge=${result.challengeId}` +
++        (result.message ? ` (${result.message})` : '')
++    );
++    // TaskResponse is currently an empty object per the typings.
++    return c.json({}, 200);
++  } catch (error) {
++    console.error(`[rangefinder:dailypost] unexpected scheduler failure:`, error);
++    // A 500 asks the platform to redeliver; redelivery is idempotent by design.
++    return c.json({}, 500);
++  }
++});
+diff --git a/src/server/routes/triggers.ts b/src/server/routes/triggers.ts
+index 947ab07a8e3b62d8fddcbb96a4a6e04dd39c7446..ccba69b1338d5f13ed334fb0fe2503179962f0ef 100644
+--- a/src/server/routes/triggers.ts
++++ b/src/server/routes/triggers.ts
+@@ -1,20 +1,34 @@
+ import { Hono } from 'hono';
+ import type { OnAppInstallRequest, TriggerResponse } from '@devvit/web/shared';
+ import { context } from '@devvit/web/server';
+-import { createPost } from '../core/post';
++import { utcDayKey } from '../../shared/dayKey';
++import { ensureDailyPostForUtcDay } from '../core/dailyPost';
+ 
+ export const triggers = new Hono();
+ 
++// Stage 3.7 phase B: installation also routes through the SHARED idempotent
++// ensureDailyPostForUtcDay(), so the install-day post is the day's scheduled
++// challenge and can never collide with the scheduled task or a moderator.
+ triggers.post('/on-app-install', async (c) => {
+   try {
+-    const post = await createPost();
++    const utcDay = utcDayKey();
++    const result = await ensureDailyPostForUtcDay(utcDay, { reason: 'install' });
+     const input = await c.req.json<OnAppInstallRequest>();
++    if (result.postId) {
++      return c.json<TriggerResponse>(
++        {
++          status: 'success',
++          message: `Rangefinder challenge post ${result.status === 'created' ? 'created' : 'already present'} in r/${context.subredditName} (id ${result.postId}, challenge ${result.challengeId}, trigger: ${input.type})`,
++        },
++        200
++      );
++    }
+     return c.json<TriggerResponse>(
+       {
+-        status: 'success',
+-        message: `Rangefinder challenge post created in r/${context.subredditName} (id ${post.id}, trigger: ${input.type})`,
++        status: 'error',
++        message: `Challenge post not created for ${utcDay}: ${result.message ?? result.status}`,
+       },
+-      200
++      400
+     );
+   } catch (error) {
+     console.error(`Error creating post on install: ${error}`);
+-- 
+2.39.5
+

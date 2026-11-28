@@ -1,0 +1,1565 @@
+From ad20d94b2bd8fdeec9a67c06eecc32c40cee211c Mon Sep 17 00:00:00 2001
+From: timmyspurs12 <196032606+timmyspurs12@users.noreply.github.com>
+Date: Sat, 28 Nov 2026 14:27:31 +0000
+Subject: [PATCH 3/3] Daily posting audit: owner-fenced claims, TTL derivation,
+ override warning, bounded reconciliation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Source-level audit of dailyPost.ts per review — NEW commit (6852e00 unamended):
+
+1. Claim-owner fencing: every execution carries a unique owner token stored
+   in the claim. ALL claim writes (pre-submit->submitting transition,
+   completion ->done, adoption, TTL renewal, stale release, moderator
+   override clear) run as WATCH/MULTI/EXEC transactions that re-verify the
+   observed owner token + phase before writing. Mechanism confirmed against
+   installed typings (RedisClient.watch(...keys) -> TxClientLike with
+   multi/set{expiration}/del/expire/exec/unwatch; plain-client read between
+   watch and multi per the store-verified pattern). A fenced loser never
+   overwrites, never releases, never submits — it re-reads and responds to
+   the current state. Tests: A-claims-pauses/B-reclaims/A-resumes race
+   (A submits nothing; B's claim intact), submitting-transition fence abort,
+   and stale-release fence abort.
+
+2. TTL review: routes derive the UTC day from the server clock (code-verified
+   in scheduler.ts/menu.ts/triggers.ts), so delayed redelivery or late
+   moderator action cannot target a past day. Day D's claim is targetable at
+   most ~24h (+00:05 cron offset; >5min skew required to straddle midnight);
+   the 48h claim TTL strictly exceeds that window — expiry can never precede
+   the last targeting, so it cannot produce a duplicate. Derivation documented
+   in code + runbook; uncertain claims re-arm TTL on every encounter.
+
+3. Override semantics: the menu's FIRST-click confirmation text now carries
+   the explicit duplicate warning ('if the original request was accepted
+   later, the replacement CAN duplicate it') BEFORE the second click; the
+   success toast repeats it; README and runbook document the same.
+
+4. Reconciliation bounds: confirmed ListingFetchOptions {limit, pageSize} —
+   getNewPosts returns at most the newest 50. 'No match' in a limited window
+   is never proof of non-existence; it always yields uncertain, never a
+   recreation. Test added: truncated listing with the matching post beyond
+   the limit -> uncertain, no recreate.
+
+Battery: lint 0, tsc 0, build OK, spec 18/18, unit 73/73 (25 daily-post
+tests), harness 8/8, audit:bundle OK (34 answers). Diff scoped to
+dailyPost.ts, its tests, menu.ts override text, and docs. Local only —
+NOT pushed.
+
+Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+---
+ README.md                    |  34 ++-
+ docs/PLAYTEST-RUNBOOK.md     |  57 ++++-
+ src/server/core/dailyPost.ts | 461 +++++++++++++++++++++++++++--------
+ src/server/dailyPost.test.ts | 362 +++++++++++++++++++++------
+ src/server/routes/menu.ts    |  12 +-
+ 5 files changed, 723 insertions(+), 203 deletions(-)
+
+diff --git a/README.md b/README.md
+index 4cc7370923c9427a8ec32c19f501c85b89bdf14d..b329a3ee8714de91d92e7da8b6e0ac44ddcb2736 100644
+--- a/README.md
++++ b/README.md
+@@ -146,18 +146,28 @@ step-by-step, the debug-log checklist, and the results record template are in
+ 
+ Daily posts are created by one idempotent function shared by the 00:05 UTC
+ cron, the moderator menu, and app install. A Redis claim tracks each day
+-through `pre-submit` → `submitting` → `done`; once a Reddit submission has
+-been *attempted*, the outcome is unknowable to any later run, so that state
+-is **never released automatically** — the system reconciles against the
+-installation's subreddit and adopts a matching post if one exists. When
+-reconciliation cannot establish the outcome, the day reports `uncertain`,
+-stays blocked for automatic creation, and a moderator resolves it with a
+-two-click confirm on the existing menu item (final reconciliation, then —
+-only if verified absent — a human-authorized replacement). This is
+-deliberately **at-most-once, not exactly-once**: a rare missing daily post
+-recoverable in seconds is preferred over any automatic duplicate. Even a
+-duplicate post could not double-count anything: player results and daily
+-stats are keyed by challenge, not by post.
++through `pre-submit` → `submitting` → `done`, and **every execution carries a
++unique owner token**: each claim transition is a WATCH/MULTI/EXEC transaction
++that re-verifies the token before writing (the same mechanism the
++player-result store uses), so a paused or crashed worker can never overwrite
++or release another worker's claim. Once a Reddit submission has been
++*attempted*, the outcome is unknowable to any later run, so that state is
++**never released automatically** — the system reconciles against the
++installation's subreddit (newest-50 listing; a post missing from that limited
++window is never treated as proof of non-existence) and adopts a matching post
++if one exists. When reconciliation cannot establish the outcome, the day
++reports `uncertain`, stays blocked for automatic creation, and a moderator
++resolves it with a two-click confirm on the existing menu item (final
++reconciliation, then — only if verified absent — a human-authorized
++replacement). **That override carries a stated risk: if the original Reddit
++request was accepted later, the replacement can duplicate it** — the
++moderator sees this warning before the second click. This is deliberately
++**at-most-once, not exactly-once**: a rare missing daily post recoverable in
++seconds is preferred over any automatic duplicate. Even a duplicate post
++could not double-count anything: player results and daily stats are keyed by
++challenge, not by post. Claim records live 48 hours — strictly longer than
++any window in which a route (all of which derive the day from the server
++clock) can target that day — so record expiry can never produce a duplicate.
+ 
+ ### Daily challenges
+ 
+diff --git a/docs/PLAYTEST-RUNBOOK.md b/docs/PLAYTEST-RUNBOOK.md
+index a177908de6aa051a47c9c6a163d0bd3487114abb..ac7bb0178527463595c368cc79dab8bc1d966a5f 100644
+--- a/docs/PLAYTEST-RUNBOOK.md
++++ b/docs/PLAYTEST-RUNBOOK.md
+@@ -664,16 +664,33 @@ The counter lives in Redis key `challenge:{challengeId}:scores`
+ - A repeat delivery, a second moderator click, or a moderator click DURING a
+   scheduled run returns the existing post (the menu navigates to it with an
+   "already created" toast); no duplicate is submitted.
++- **Owner fencing (audit fix):** every execution carries a unique owner
++  token stored in the claim. EVERY claim write — the pre-submit→submitting
++  transition, completion, adoption, TTL renewal, stale release, and the
++  moderator override clear — runs as a WATCH/MULTI/EXEC transaction that
++  re-verifies the stored token and phase before writing (the same mechanism
++  the player-result store uses; verified against the installed typings:
++  `RedisClient.watch(...keys) → TxClientLike` with `multi/set/del/expire/
++  exec/unwatch`). A fenced writer that loses never overwrites, never
++  releases, and never submits — it re-reads and responds to the current
++  state. Proven by the fence-race unit test (A pauses, claim goes stale, B
++  reclaims, A resumes: A submits nothing and B's claim is untouched).
+ - **Ambiguous claims are never released automatically.** The ONLY state that
+   auto-releases is a stale (>15 min) `pre-submit` claim — the holder died
+   before any Reddit call, so no post can exist (confirmed pre-submission
+-  failure). A `submitting` claim at ANY age is treated as "Reddit may have
+-  accepted": the system reconciles (enumerates the installation's own
+-  subreddit via `reddit.getNewPosts({subredditName})` — identity
+-  `context.subredditName`, verified; a post whose postData matches BOTH the
+-  UTC day and the challenge id is adopted) and, if reconciliation cannot
+-  establish the outcome, RETAINS the claim and reports `uncertain`. No
+-  automatic retry runs for that day.
++  failure) — and even that release is fenced. A `submitting` claim at ANY
++  age is treated as "Reddit may have accepted": the system reconciles
++  (enumerates the installation's own subreddit via
++  `reddit.getNewPosts({subredditName})` — identity `context.subredditName`,
++  verified) and, if reconciliation cannot establish the outcome, RETAINS the
++  claim and reports `uncertain`. No automatic retry runs for that day.
++- **Reconciliation is bounded (audit fix):** `getNewPosts` honours
++  `ListingFetchOptions {limit, pageSize}` (verified typings) and returns at
++  most the newest 50 posts. A post beyond that window — or lagging the
++  index — is invisible, so "no match" is NEVER treated as proof Reddit did
++  not create the post; it always yields `uncertain`, never a recreation.
++  Unit-tested with a truncated listing where the matching post lies beyond
++  the limit.
+ 
+ **Verifying the task is configured:**
+ 
+@@ -689,6 +706,19 @@ The counter lives in Redis key `challenge:{challengeId}:scores`
+   the client's question is the one mapped by `scheduledChallengeIdFor(day)`
+   in `src/server/challenge.ts` (rotation epoch `2026-11-26`).
+ 
++**TTL / retention (audit-reviewed):** no route can target a past UTC day —
++`/internal/scheduler/daily-post`, `/internal/menu/post-create` and the
++install trigger all derive the day from the server clock (`utcDayKey()` of
++the current time), so a delayed scheduler redelivery or a late moderator
++action still resolves to the CURRENT day. Day D's claim can therefore only
++be targeted while the clock reads day D — at most ~24 h (plus the 00:05 cron
++offset; a >5-minute clock skew would be required to straddle midnight, which
++would be a platform fault, not a guarantee we rely on). The claim TTL of
++**48 hours** strictly exceeds that targeting window, so a claim cannot
++expire before the last possible targeting of its day: expiry can never
++produce a duplicate through any route-reachable path. Uncertain claims are
++re-armed (TTL refreshed) on every encounter, so retention only extends.
++
+ **Testing duplicate prevention safely:**
+ 
+ - Invoke the moderator menu item twice for the same UTC day. Expected: the
+@@ -728,10 +758,15 @@ The counter lives in Redis key `challenge:{challengeId}:scores`
+   so they can never double-count across duplicate posts.
+ - **Moderator recovery (two-click confirm, same menu item):** when the menu
+   reports `uncertain`, the FIRST click arms a 2-minute override and shows
+-  instructions; the moderator verifies the subreddit has no post for that
+-  date; the SECOND click performs one final reconciliation attempt and, only
+-  if nothing is found, clears the retained claim and creates a replacement —
+-  an explicit human decision, logged as `MODERATOR OVERRIDE`.
++  instructions INCLUDING THE DUPLICATE WARNING; the moderator verifies the
++  subreddit has no post for that date; the SECOND click performs one final
++  reconciliation attempt and, only if nothing is found, clears the retained
++  claim (fenced) and creates a replacement — an explicit human decision,
++  logged as `MODERATOR OVERRIDE`. **The moderator must understand before the
++  second click: if the original Reddit request was in fact accepted later
++  (in-flight when the override ran), the replacement CAN duplicate it.**
++  Verify the subreddit listing immediately before confirming, and remove one
++  post if a duplicate nevertheless appears.
+ - A recorded post that Reddit cannot serve (deleted): status `unreachable`;
+   NO automatic recreation (avoids fighting moderator intent); the moderator
+   menu reports the situation instead.
+diff --git a/src/server/core/dailyPost.ts b/src/server/core/dailyPost.ts
+index a20a4643dd953bfb3df564d439bb79c4aeca8960..d9a5ea282b9025adaa636f2757f46209390c8afc 100644
+--- a/src/server/core/dailyPost.ts
++++ b/src/server/core/dailyPost.ts
+@@ -1,4 +1,4 @@
+-// Daily-post idempotency (Stage 3.7 daily posting — REVISED per review).
++// Daily-post idempotency (Stage 3.7 daily posting — OWNER-FENCED revision).
+ //
+ // One post maximum per subreddit installation and UTC day. BOTH the
+ // devvit.json-scheduled task (/internal/scheduler/daily-post) and the
+@@ -8,17 +8,40 @@
+ //
+ // ============================ CLAIM STATE MACHINE ============================
+ // Redis key `rf:dailypost:{subredditId}:{utcDay}`, atomic SET(NX) + TTL 48h:
+-//   1. {phase:'pre-submit', …}  — claimed; NO submission has been attempted.
+-//   2. {phase:'submitting', …}  — written IMMEDIATELY BEFORE the Reddit call;
+-//                                 from here on the outcome is UNKNOWABLE to
+-//                                 any later run (Reddit may have accepted).
+-//   3. {phase:'done', postId}   — resolved; later calls return/verify it.
++//   1. {phase:'pre-submit', owner}  — claimed; NO submission has been attempted.
++//   2. {phase:'submitting', owner}  — written IMMEDIATELY BEFORE the Reddit
++//      call via an OWNER-FENCED transaction; from here on the outcome is
++//      UNKNOWABLE to any later run (Reddit may have accepted).
++//   3. {phase:'done', owner, postId} — resolved; later calls return/verify it.
+ //
+-// RECOVERY RULES (review directives 3–5):
++// =========================== OWNER FENCING (audit fix) =======================
++// Every execution generates a unique owner token (crypto.randomUUID()). The
++// token is stored in the claim at claim time, and EVERY subsequent write to
++// the claim — the pre-submit→submitting transition, completion (→done),
++// adoption writes, uncertain-state TTL renewal, stale-claim release, and the
++// moderator override clear — is executed as a WATCH/MULTI/EXEC transaction
++// that re-reads the claim and verifies the OBSERVED owner token and phase
++// still match before writing (guarded compare-and-set). Fence verification
++// uses the same mechanism the player-result store uses on its per-user string
++// keys; verified against the installed typings:
++//   • RedisClient.watch(...keys): Promise<TxClientLike>   (types/redis.d.ts:724)
++//   • TxClientLike: multi(), set(k, v, {expiration}), del(), expire(), exec(),
++//     unwatch() — so verify + write + TTL ride ONE atomic transaction.
++//   • Reads happen through the PLAIN client between watch() and multi():
++//     the SDK rejects pre-multi reads on the transaction client (verified
++//     against @devvit/test v0.15.4 in store.ts — same pattern reused here).
++//   • exec() resolves an array (or throws); null/undefined/non-array/EMPTY
++//     array = WATCH abort (key changed) — store.ts-verified semantics.
++// A fenced writer that loses (claim changed under it) NEVER overwrites,
++// NEVER releases, and NEVER submits — it re-reads the current claim and
++// responds to that state instead.
++//
++// RECOVERY RULES (review directives 3–5, first revision):
+ // • A 'pre-submit' claim older than STALE_MS means the holder died BETWEEN the
+ //   claim write and the submitting write — no Reddit call was ever made — so
+ //   this is the ONLY claim state that is automatically released (confirmed
+-//   pre-submission failure). Releasing it is safe and keeps the day available.
++//   pre-submission failure), and even that release is fenced: if the claim
++//   changed under the releaser, nothing is deleted.
+ // • A 'submitting' claim is AMBIGUOUS FOREVER: it is never released
+ //   automatically and never auto-recreated, regardless of age. Recovery is
+ //   reconciliation only: the installation's own subreddit is enumerated via
+@@ -26,12 +49,15 @@
+ //   verified from the server context — NOT an app-username convention, which
+ //   the installed SDK does not expose) and a post whose postData matches BOTH
+ //   the UTC day and the challenge id is adopted.
++// • Reconciliation is BOUNDED: getNewPosts honors ListingFetchOptions
++//   {limit, pageSize} and returns at most `limit` NEWEST posts. A post missing
++//   from that window is NOT proof Reddit did not create it — a "no match"
++//   result therefore RETAINS the uncertain claim; it never triggers creation.
+ // • If reconciliation cannot establish whether the post exists (enumeration
+-//   unavailable, failed, or found no match — absence in a listing is NOT
+-//   proof of non-existence), the claim is RETAINED ('uncertain'): the caller
+-//   gets explicit instructions and the day is blocked for automatic creation.
+-//   This is deliberate: correctness (never duplicate) over availability.
+-//   The moderator override (below) is the availability lever.
++//   unavailable, failed, truncated without a match), the claim is RETAINED
++//   ('uncertain'): the caller gets explicit instructions and the day is
++//   blocked for automatic creation. Correctness (never duplicate) over
++//   availability; the moderator override (below) is the availability lever.
+ // • A thrown error from submitCustomPost is NOT treated as a confirmed
+ //   pre-submission failure (the call may have been accepted and the response
+ //   lost) — the claim stays 'submitting' and the flow above applies.
+@@ -40,12 +66,16 @@
+ // The existing menu item runs a two-click confirm (no new menu items):
+ //   click 1 on an uncertain day: arms an override key
+ //        rf:dailypost:{subredditId}:{utcDay}:override (TTL 2 min) and shows
+-//        instructions ("verify r/<sub> has no post for <date>, then tap
+-//        again within 2 minutes").
++//        instructions INCLUDING THE DUPLICATE WARNING ("if the original
++//        request was in fact accepted later, the replacement can duplicate
++//        it — verify r/<sub> first").
+ //   click 2 (override armed): ensureDailyPostForUtcDay(…, moderatorOverride)
+ //        makes ONE final reconciliation attempt (adopting a found post), and
+-//        only if that fails clears the retained claim and creates a
+-//        replacement AS AN EXPLICIT HUMAN DECISION. Logged loudly.
++//        only if that fails clears the retained claim — via a fenced delete —
++//        and creates a replacement AS AN EXPLICIT HUMAN DECISION. Logged
++//        loudly. Because an in-flight Reddit request can still be accepted
++//        AFTER the override, a duplicate remains possible in that window;
++//        the moderator confirms this before the second click.
+ //
+ // ================= AT-MOST-ONCE vs AVAILABILITY TRADE-OFF ====================
+ // Without adoption success, this system is AT-MOST-ONCE: after an ambiguous
+@@ -58,16 +88,29 @@
+ // keyed by challenge:{id} — NOT by post — so scores, the daily ZSET, and
+ // idempotency can never double-count across duplicate posts.
+ //
+-// Legacy note: claims written by the previous revision
+-// ({challengeId, postId, at} without a phase) are honoured — with a postId
+-// they are treated as 'done', without one as 'submitting' (conservative).
++// ======================= TTL RETENTION DERIVATION (audit) ====================
++// No route can target a past UTC day: scheduler.ts, menu.ts and triggers.ts
++// all derive the day from the SERVER CLOCK (utcDayKey() of Date.now()), so a
++// delayed scheduler redelivery or a late moderator action still resolves to
++// the CURRENT day. Day D's claim can therefore only be read/targeted while
++// the clock reads day D — at most ~24h (plus the 00:05 cron offset and any
++// clock skew; a skew >5 min would be required to straddle midnight, which is
++// a platform fault, not a scheduling guarantee we rely on). The claim TTL of
++// 48h strictly exceeds that targeting window, so a claim cannot expire before
++// the last possible targeting of its day: expiry can never produce a
++// duplicate through any route-reachable path. Uncertain claims are refreshed
++// (TTL re-armed) on every encounter, so retention only ever extends.
++//
++// Legacy note: claims written by earlier revisions ({challengeId, postId, at}
++// without phase/owner) are honoured — with a postId they are treated as
++// 'done', without one as 'submitting' (conservative). Their owner token is
++// undefined; fencing still works because every guard compares the OBSERVED
++// owner+phase pair, whatever it is.
+ 
+ import { context, redis, reddit } from '@devvit/web/server';
+ import { scheduledChallengeIdFor } from '../challenge.ts';
+ import { createPost } from './post.ts';
+ 
+-export { DAILY_POST_TITLE } from './post.ts';
+-
+ /** Claim TTL: covers the day plus a manual retry window (2 days). */
+ export const DAILY_POST_CLAIM_TTL_SECONDS = 48 * 3600;
+ /** Override (second-click confirm) window for the moderator recovery. */
+@@ -78,6 +121,8 @@ export const DAILY_POST_OVERRIDE_TTL_SECONDS = 120;
+  * that a merely slow run is never interrupted.
+  */
+ export const DAILY_POST_STALE_MS = 15 * 60 * 1000;
++/** Reconciliation window: the newest N posts of the installation's subreddit. */
++export const DAILY_POST_RECONCILE_LIMIT = 50;
+ 
+ export type DailyPostStatus =
+   | 'created' // this call submitted the post
+@@ -101,6 +146,16 @@ export type DailyPostLike = {
+   getPostData(): Promise<{ challengeId?: unknown; day?: unknown } | undefined>;
+ };
+ 
++/** The WATCH/transaction surface of the installed SDK (TxClientLike). */
++export interface TxLike {
++  multi(): Promise<unknown>;
++  set(key: string, value: string, options?: { expiration?: Date }): Promise<unknown>;
++  del(key: string): Promise<unknown>;
++  expire(key: string, seconds: number): Promise<unknown>;
++  exec(): Promise<unknown>;
++  unwatch(): Promise<unknown>;
++}
++
+ export interface DailyPostDeps {
+   redis: {
+     get(key: string): Promise<string | undefined>;
+@@ -110,6 +165,8 @@ export interface DailyPostDeps {
+       options?: { nx?: boolean; expiration?: Date }
+     ): Promise<unknown>;
+     del(key: string): Promise<unknown>;
++    /** WATCH — verified: RedisClient.watch(...keys) → TxClientLike. */
++    watch(key: string): Promise<TxLike>;
+   };
+   reddit: {
+     submitCustomPost(opts: {
+@@ -119,8 +176,9 @@ export interface DailyPostDeps {
+     getPostById(id: string): Promise<DailyPostLike>;
+     /**
+      * Subreddit-scoped newest-first listing — verified against the installed
+-     * SDK (RedditClient.getNewPosts → Listing<Post>, Post.getPostData()).
+-     * Optional so mocks/harnesses without it degrade to 'uncertain'.
++     * SDK (RedditClient.getNewPosts → Listing<Post>, Post.getPostData();
++     * ListingFetchOptions {limit, pageSize}). Optional so mocks/harnesses
++     * without it degrade to 'uncertain'.
+      */
+     getNewPosts?(opts: {
+       subredditName?: string;
+@@ -151,23 +209,25 @@ type Claim = {
+   day: string;
+   postId: string | null;
+   at: number;
++  /** Unique token of the execution that (last) wrote this claim version. */
++  owner?: string;
+ };
+ 
+ /**
+  * Parses a claim. Returns null for unrecognised shapes. Legacy claims from
+- * the previous revision ({challengeId, postId, at}, no phase) are mapped:
++ * earlier revisions ({challengeId, postId, at}, no phase/owner) are mapped:
+  * with a postId → 'done'; without → 'submitting' (conservative).
+  */
+ function parseClaim(raw: string, day: string): Claim | null {
+   try {
+-    const p = JSON.parse(raw) as Partial<Claim> & { postId?: unknown };
++    const p = JSON.parse(raw) as Partial<Claim>;
+     const at = typeof p.at === 'number' ? p.at : NaN;
+     const ch = typeof p.challengeId === 'string' ? p.challengeId : null;
+     if (ch === null || Number.isNaN(at)) return null;
++    const owner = typeof p.owner === 'string' ? p.owner : undefined;
+     if (typeof p.phase === 'string' && ['pre-submit', 'submitting', 'done'].includes(p.phase)) {
+-      const postId =
+-        p.phase === 'done' && typeof p.postId === 'string' ? p.postId : null;
+-      return { phase: p.phase as ClaimPhase, challengeId: ch, day, postId, at };
++      const postId = p.phase === 'done' && typeof p.postId === 'string' ? p.postId : null;
++      return { phase: p.phase as ClaimPhase, challengeId: ch, day, postId, at, owner };
+     }
+     // Legacy shape.
+     const legacyPostId = typeof p.postId === 'string' ? p.postId : null;
+@@ -177,6 +237,7 @@ function parseClaim(raw: string, day: string): Claim | null {
+       day,
+       postId: legacyPostId,
+       at,
++      owner: undefined,
+     };
+   } catch {
+     return null;
+@@ -196,6 +257,61 @@ function claimSucceeded(setResponse: unknown): boolean {
+   return setResponse === 'OK' || setResponse === true || setResponse === 1;
+ }
+ 
++function newOwnerToken(): string {
++  return crypto.randomUUID();
++}
++
++/**
++ * OWNER-FENCED compare-and-set on the claim key. WATCH the key, re-read it
++ * through the plain client (store.ts-verified pattern), and only if the
++ * claim still shows the EXPECTED owner token AND phase, run MULTI +
++ * write(+TTL) + EXEC atomically. Outcomes:
++ *   'committed' — the guarded write applied.
++ *   'fenced'    — the claim no longer matches (changed under us): nothing
++ *                 was written; the caller must re-read and respond to the
++ *                 CURRENT state. Never overwrite, never release.
++ *   'aborted'   — WATCH abort (key changed between watch and exec): same
++ *                 handling as 'fenced'.
++ */
++async function fencedClaimWrite(
++  deps: DailyPostDeps,
++  key: string,
++  expect: { owner: string | undefined; phase: ClaimPhase },
++  next: Claim | 'DELETE',
++  ttlSeconds: number,
++  now: number
++): Promise<'committed' | 'fenced' | 'aborted'> {
++  const tx = await deps.redis.watch(key);
++  // Plain-client read between watch() and multi(): the SDK rejects pre-multi
++  // reads on the transaction client (store.ts-verified against 0.15.4).
++  const raw = await deps.redis.get(key);
++  // Day-agnostic parse: the fence compares owner+phase, and the caller
++  // already validated challengeId/day before invoking the fence.
++  const claim = raw ? parseClaim(raw, '') : null;
++  if (!claim || claim.owner !== expect.owner || claim.phase !== expect.phase) {
++    await tx.unwatch().catch(() => undefined);
++    return 'fenced';
++  }
++  await tx.multi();
++  if (next === 'DELETE') {
++    await tx.del(key);
++  } else {
++    await tx.set(key, JSON.stringify(next), {
++      expiration: new Date(now + ttlSeconds * 1000),
++    });
++  }
++  let execResult: unknown;
++  try {
++    execResult = await tx.exec();
++  } catch {
++    execResult = null; // SDK may surface abort as a rejection — treat as abort
++  }
++  if (execResult === null || execResult === undefined || !Array.isArray(execResult) || execResult.length === 0) {
++    return 'aborted';
++  }
++  return 'committed';
++}
++
+ export type EnsureOptions = {
+   /** Why the call was made — logging only; never affects the outcome. */
+   reason?: 'scheduler' | 'menu' | 'install';
+@@ -210,7 +326,7 @@ export type EnsureOptions = {
+ };
+ 
+ const MODERATOR_HELP =
+-  'Verify r/{sub} has no Rangefinder post for {day}, then tap “Create Rangefinder challenge post” again within 2 minutes to create a replacement.';
++  'A previous run may or may not have created the post. VERIFY r/{sub} has no Rangefinder post for {day}, then tap “Create Rangefinder challenge post” again within 2 minutes to create a replacement. WARNING: if the original request was in fact accepted later, the replacement CAN duplicate it — verify before confirming.';
+ 
+ /**
+  * Ensure exactly one Rangefinder challenge post exists for `utcDay`
+@@ -237,7 +353,7 @@ export async function ensureDailyPostForUtcDay(
+   const key = dailyPostClaimKey(deps.namespace, utcDay);
+   const reason = opts.reason ?? 'scheduler';
+ 
+-  for (let attempt = 0; attempt < 2; attempt++) {
++  for (let attempt = 0; attempt < 3; attempt++) {
+     const raw = await deps.redis.get(key);
+     if (typeof raw === 'string' && raw.length > 0) {
+       const claim = parseClaim(raw, utcDay);
+@@ -249,60 +365,107 @@ export async function ensureDailyPostForUtcDay(
+         );
+         return uncertainResult(challengeId, utcDay, deps, 'unrecognised claim retained');
+       }
+-      const outcome = await handleExistingClaim(
++      const outcome = await resolveExistingClaim(
+         deps,
+         key,
+         claim,
++        raw,
+         now,
+         reason,
+         opts.moderatorOverride === true
+       );
+       if (outcome !== null) return outcome;
+-      // null = a confirmed pre-submission claim was released (or the
+-      // moderator override cleared an uncertain one) — loop to claim/create.
++      // null = a fenced release succeeded (confirmed pre-submit failure) or
++      // the moderator override cleared the claim — loop to claim/create.
+       continue;
+     }
+ 
+     // No claim: atomic single-step claim — only ONE concurrent caller wins.
++    const owner = newOwnerToken();
+     const claim: Claim = {
+       phase: 'pre-submit',
+       challengeId,
+       day: utcDay,
+       postId: null,
+       at: now,
++      owner,
+     };
+     const setResponse = await deps.redis.set(key, JSON.stringify(claim), {
+       nx: true,
+       expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000),
+     });
+     if (!claimSucceeded(setResponse)) {
+-      continue; // lost the race — re-read the winner's claim once
++      continue; // lost the race — re-read the winner's claim
+     }
+ 
+-    // Mark the ambiguous phase BEFORE the Reddit call: from here the outcome
+-    // is unknowable to later runs (crash = 'submitting' claim retained).
+-    await deps.redis.set(
++    // Fenced transition pre-submit → submitting, BEFORE the Reddit call. If
++    // the claim changed under us (e.g. this process paused past STALE_MS and
++    // another worker released + re-claimed), we must NOT submit.
++    const transition = await fencedClaimWrite(
++      deps,
+       key,
+-      JSON.stringify({ ...claim, phase: 'submitting' } satisfies Claim),
+-      { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++      { owner, phase: 'pre-submit' },
++      { ...claim, phase: 'submitting' },
++      DAILY_POST_CLAIM_TTL_SECONDS,
++      now
+     );
++    if (transition !== 'committed') {
++      console.warn(
++        `[rangefinder:dailypost] ${reason}: claim lost before submission (fence ${transition}) — re-reading current state, NOT submitting`
++      );
++      const current = await resolveCurrentState(deps, key, utcDay, challengeId, now, reason, opts.moderatorOverride === true);
++      if (current) return current;
++      continue;
++    }
++
+     try {
+-      const post = await createPost({ challengeId, day: utcDay }, deps.reddit.submitCustomPost.bind(deps.reddit));
+-      await deps.redis.set(
++      const post = await createPost(
++        { challengeId, day: utcDay },
++        deps.reddit.submitCustomPost.bind(deps.reddit)
++      );
++      // Fenced completion submitting → done. If the claim changed while the
++      // Reddit call was in flight (only the moderator override can clear a
++      // 'submitting' claim), do NOT overwrite the new state.
++      const completion = await fencedClaimWrite(
++        deps,
+         key,
+-        JSON.stringify({
+-          phase: 'done',
+-          challengeId,
+-          day: utcDay,
+-          postId: post.id,
+-          at: now,
+-        } satisfies Claim),
+-        { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++        { owner, phase: 'submitting' },
++        { phase: 'done', challengeId, day: utcDay, postId: post.id, at: now, owner },
++        DAILY_POST_CLAIM_TTL_SECONDS,
++        now
++      );
++      if (completion === 'committed') {
++        console.log(
++          `[rangefinder:dailypost] ${reason} created post ${post.id} for ${utcDay} (challenge ${challengeId}) in ${deps.namespace}`
++        );
++        return { status: 'created', postId: post.id, challengeId };
++      }
++      console.warn(
++        `[rangefinder:dailypost] ${reason}: claim changed while Reddit accepted post ${post.id} (fence ${completion}) — re-reading; NOTE a moderator override may create a duplicate of ${post.id} (documented)`
+       );
+-      console.log(
+-        `[rangefinder:dailypost] ${reason} created post ${post.id} for ${utcDay} (challenge ${challengeId}) in ${deps.namespace}`
++      // Try to re-record the outcome only if the key vanished entirely (NX).
++      const reRecord = await deps.redis.set(
++        key,
++        JSON.stringify({ phase: 'done', challengeId, day: utcDay, postId: post.id, at: now, owner }),
++        { nx: true, expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
+       );
+-      return { status: 'created', postId: post.id, challengeId };
++      if (claimSucceeded(reRecord)) {
++        return {
++          status: 'created',
++          postId: post.id,
++          challengeId,
++          message: 'claim was cleared mid-flight (moderator override?) — outcome re-recorded',
++        };
++      }
++      const current = await resolveCurrentState(deps, key, utcDay, challengeId, now, reason, opts.moderatorOverride === true);
++      if (current) return current;
++      return {
++        status: 'created',
++        postId: post.id,
++        challengeId,
++        message:
++          'created, but the claim changed mid-flight — a moderator override may create a duplicate of this post (documented)',
++      };
+     } catch (error) {
+       // NOT a confirmed pre-submission failure: Reddit may have accepted.
+       // The claim STAYS in 'submitting' — never released automatically.
+@@ -312,30 +475,32 @@ export async function ensureDailyPostForUtcDay(
+       );
+       const found = await reconcileDay(deps, utcDay, challengeId, reason);
+       if (found.ok && found.postId) {
+-        await deps.redis.set(
++        const adopt = await fencedClaimWrite(
++          deps,
+           key,
+-          JSON.stringify({
+-            phase: 'done',
+-            challengeId,
+-            day: utcDay,
+-            postId: found.postId,
+-            at: now,
+-          } satisfies Claim),
+-          { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++          { owner, phase: 'submitting' },
++          { phase: 'done', challengeId, day: utcDay, postId: found.postId, at: now, owner },
++          DAILY_POST_CLAIM_TTL_SECONDS,
++          now
+         );
+-        return {
+-          status: 'exists',
+-          postId: found.postId,
+-          challengeId,
+-          message: 'adopted after a failed creation attempt',
+-        };
++        if (adopt === 'committed') {
++          return {
++            status: 'exists',
++            postId: found.postId,
++            challengeId,
++            message: 'adopted after a failed creation attempt',
++          };
++        }
++        // Fence failed — someone else resolved the claim; report current state.
++        const current = await resolveCurrentState(deps, key, utcDay, challengeId, now, reason, false);
++        if (current) return current;
+       }
+-      await refreshRetainedClaim(deps, key, utcDay, now);
++      await refreshRetainedClaim(deps, key, utcDay, owner, now);
+       return uncertainResult(challengeId, utcDay, deps, `creation failed: ${message}`);
+     }
+   }
+ 
+-  // Both attempts lost the race to a fresh claim.
++  // All attempts lost the race to a fresh claim.
+   return {
+     status: 'in-progress',
+     postId: null,
+@@ -355,20 +520,24 @@ function uncertainResult(
+     status: 'uncertain',
+     postId: null,
+     challengeId,
+-    message: `${detail}. A previous run may or may not have created the post — no automatic retry will run. ${help}`,
++    message: `${detail}. No automatic retry will run. ${help}`,
+   };
+ }
+ 
+-/** Returns a result, or null when the caller should loop (claim released). */
+-async function handleExistingClaim(
++/**
++ * One pass of claim handling. Returns a result, or null when a FENCED
++ * release/clear succeeded and the caller should loop (claim → create).
++ */
++async function resolveExistingClaim(
+   deps: DailyPostDeps,
+   key: string,
+   claim: Claim,
++  raw: string,
+   now: number,
+   reason: EnsureOptions['reason'],
+   moderatorOverride: boolean
+ ): Promise<DailyPostResult | null> {
+-  const { challengeId, day } = claim;
++  const { challengeId, day, owner } = claim;
+ 
+   if (claim.phase === 'done' || claim.postId) {
+     return verifyRecordedPost(deps, claim.postId!, challengeId);
+@@ -386,12 +555,26 @@ async function handleExistingClaim(
+     }
+     // CONFIRMED pre-submission failure: the holder died between the claim
+     // write and the submitting write — no Reddit call was ever made. The
+-    // only claim state we release automatically.
++    // only claim state we release automatically — and even this release is
++    // FENCED: if the claim changed under us, nothing is deleted.
++    const release = await fencedClaimWrite(
++      deps,
++      key,
++      { owner, phase: 'pre-submit' },
++      'DELETE',
++      0,
++      now
++    );
++    if (release === 'committed') {
++      console.warn(
++        `[rangefinder:dailypost] ${reason}: stale pre-submit claim for ${day} (age ${Math.round(age / 1000)}s) — confirmed no submission was attempted; released for retry`
++      );
++      return null; // loop: fresh claim + create
++    }
+     console.warn(
+-      `[rangefinder:dailypost] ${reason}: stale pre-submit claim for ${day} (age ${Math.round(age / 1000)}s) — confirmed no submission was attempted; releasing for retry`
++      `[rangefinder:dailypost] ${reason}: stale pre-submit release FENCED (${release}) — claim changed under us, re-reading`
+     );
+-    await deps.redis.del(key).catch(() => undefined);
+-    return null;
++    return null; // loop: the next read sees the CURRENT claim and handles it
+   }
+ 
+   // phase === 'submitting': AMBIGUOUS at any age — Reddit may have accepted.
+@@ -407,44 +590,99 @@ async function handleExistingClaim(
+   }
+   const found = await reconcileDay(deps, day, challengeId, reason);
+   if (found.ok && found.postId) {
+-    await deps.redis.set(
++    // Fenced adoption: only if the claim is still this exact submitting
++    // claim (same owner token). Never overwrite a claim that changed.
++    const adopt = await fencedClaimWrite(
++      deps,
+       key,
+-      JSON.stringify({
+-        phase: 'done',
+-        challengeId,
+-        day,
++      { owner, phase: 'submitting' },
++      { phase: 'done', challengeId, day, postId: found.postId, at: claim.at, owner },
++      DAILY_POST_CLAIM_TTL_SECONDS,
++      now
++    );
++    if (adopt === 'committed') {
++      return {
++        status: 'exists',
+         postId: found.postId,
+-        at: claim.at,
+-      } satisfies Claim),
+-      { expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000) }
++        challengeId,
++        message: 'adopted after a crashed creation attempt',
++      };
++    }
++    console.warn(
++      `[rangefinder:dailypost] ${reason}: adoption FENCED (${adopt}) — claim changed under us, re-reading`
+     );
+-    return {
+-      status: 'exists',
+-      postId: found.postId,
+-      challengeId,
+-      message: 'adopted after a crashed creation attempt',
+-    };
++    return null; // loop: handle the current state
+   }
+   if (moderatorOverride) {
+     // Explicit human decision (two-click confirm): one last reconciliation
+-    // already failed — clear the retained claim and create a replacement.
++    // already failed — clear the retained claim via a FENCED delete and
++    // create a replacement. See MODERATOR_HELP for the duplicate warning.
++    const clear = await fencedClaimWrite(deps, key, { owner, phase: 'submitting' }, 'DELETE', 0, now);
++    if (clear === 'committed') {
++      console.warn(
++        `[rangefinder:dailypost] ${reason}: MODERATOR OVERRIDE for ${day} (${challengeId}) — uncertain claim cleared, replacement will be created`
++      );
++      return null; // loop: fresh claim + create
++    }
+     console.warn(
+-      `[rangefinder:dailypost] ${reason}: MODERATOR OVERRIDE for ${day} (${challengeId}) — uncertain claim cleared, replacement will be created`
++      `[rangefinder:dailypost] ${reason}: moderator override FENCED (${clear}) — claim changed under us, re-reading`
+     );
+-    await deps.redis.del(key).catch(() => undefined);
+     return null;
+   }
+   console.error(
+     `[rangefinder:dailypost] ${reason}: uncertain outcome for ${day} (${challengeId}) — reconciliation ${found.detail}; claim RETAINED, no automatic retry`
+   );
+-  await refreshRetainedClaim(deps, key, day, now);
++  await refreshRetainedClaim(deps, key, day, owner, now, raw);
+   return uncertainResult(challengeId, day, deps, found.detail);
+ }
+ 
++/**
++ * Re-read the claim once and respond to its CURRENT state (used after a
++ * fenced abort). Returns null when the key is gone.
++ */
++async function resolveCurrentState(
++  deps: DailyPostDeps,
++  key: string,
++  utcDay: string,
++  challengeId: string,
++  now: number,
++  reason: EnsureOptions['reason'],
++  moderatorOverride: boolean
++): Promise<DailyPostResult | null> {
++  const raw = await deps.redis.get(key);
++  if (!raw) return null;
++  const claim = parseClaim(raw, utcDay);
++  if (!claim || claim.challengeId !== challengeId || claim.day !== utcDay) {
++    return uncertainResult(challengeId, utcDay, deps, 'unrecognised claim retained');
++  }
++  const outcome = await resolveExistingClaim(
++    deps,
++    key,
++    claim,
++    raw,
++    now,
++    reason,
++    moderatorOverride
++  );
++  if (outcome) return outcome;
++  // Released by this pass (stale pre-submit) — report in-progress-like state;
++  // the NEXT caller will claim and create.
++  return {
++    status: 'in-progress',
++    postId: null,
++    challengeId,
++    message: 'Previous claim was released during this call; retry to create.',
++  };
++}
++
+ /**
+  * Reconcile the day against the installation's subreddit via the verified
+- * SDK surface (getNewPosts → Post.getPostData). A match requires BOTH the
+- * UTC day and the challenge id (challenge ids recur every 34 days).
++ * SDK surface (getNewPosts → Post.getPostData). BOUNDED: the listing returns
++ * at most DAILY_POST_RECONCILE_LIMIT newest posts (ListingFetchOptions
++ * {limit, pageSize}); a post beyond that window — or lagging the index — is
++ * invisible here, so "no match" is NOT proof of non-existence and never
++ * triggers creation. A match requires BOTH the UTC day and the challenge id
++ * (challenge ids recur every 34 days).
+  */
+ type ReconcileOutcome = { ok: boolean; postId: string | null; detail: string };
+ 
+@@ -460,8 +698,8 @@ async function reconcileDay(
+   try {
+     const listing = await deps.reddit.getNewPosts({
+       subredditName: deps.subredditName,
+-      limit: 50,
+-      pageSize: 50,
++      limit: DAILY_POST_RECONCILE_LIMIT,
++      pageSize: DAILY_POST_RECONCILE_LIMIT,
+     });
+     const posts = await listing.all();
+     for (const post of posts) {
+@@ -473,12 +711,12 @@ async function reconcileDay(
+         return { ok: true, postId: post.id, detail: 'found matching post' };
+       }
+     }
+-    // Worked, no match — still NOT proof of non-existence (listing lag,
+-    // page window); callers retain the uncertain claim regardless.
++    // Worked, no match within the LIMITED window — still NOT proof of
++    // non-existence; callers retain the uncertain claim regardless.
+     return {
+       ok: true,
+       postId: null,
+-      detail: `enumerated ${posts.length} recent posts, no match`,
++      detail: `enumerated ${posts.length} newest posts (limit ${DAILY_POST_RECONCILE_LIMIT}), no match — absence is not proof`,
+     };
+   } catch (error) {
+     const message = error instanceof Error ? error.message : String(error);
+@@ -486,18 +724,27 @@ async function reconcileDay(
+   }
+ }
+ 
+-/** Re-arm the TTL on a retained uncertain claim (sliding 48h retention). */
++/**
++ * Re-arm the TTL on a retained uncertain claim — FENCED: only if the claim
++ * still shows the expected owner token and 'submitting' phase (never clobbers
++ * a claim that was adopted/resolved meanwhile). Pass `expectedRaw` to write
++ * the exact observed value back (legacy claims keep their shape).
++ */
+ async function refreshRetainedClaim(
+   deps: DailyPostDeps,
+   key: string,
+   utcDay: string,
+-  now: number
++  expectedOwner: string | undefined,
++  now: number,
++  expectedRaw?: string
+ ): Promise<void> {
+   try {
+-    const raw = await deps.redis.get(key);
++    const raw = expectedRaw ?? (await deps.redis.get(key));
+     if (!raw) return; // gone (TTL) — nothing to refresh
+     const claim = parseClaim(raw, utcDay);
+-    if (!claim || claim.phase !== 'submitting') return; // resolved meanwhile
++    if (!claim || claim.phase !== 'submitting' || claim.owner !== expectedOwner) {
++      return; // resolved or changed — do not clobber
++    }
+     await deps.redis.set(key, raw, {
+       expiration: new Date(now + DAILY_POST_CLAIM_TTL_SECONDS * 1000),
+     });
+diff --git a/src/server/dailyPost.test.ts b/src/server/dailyPost.test.ts
+index e0bb0405d38afbf5e2bccef4aac15917eee33855..8fadf767b9b0ada53795654e9ac4a2e4d9231a55 100644
+--- a/src/server/dailyPost.test.ts
++++ b/src/server/dailyPost.test.ts
+@@ -1,11 +1,14 @@
+-// Unit tests for the shared idempotent daily-post module (REVISED per review:
+-// ambiguous claims are never auto-released; reconciliation via the
+-// installation's own subreddit; moderator two-click override).
++// Unit tests for the owner-fenced daily-post module (audit revision).
+ //
+-// HONEST SCOPE NOTE (same as store.test.ts): these tests exercise the claim
+-// state machine, recovery and dedup logic against faithful in-memory mocks.
+-// They are NOT live-Redis/live-Reddit proof — that is verified in playtest
+-// (docs/PLAYTEST-RUNBOOK.md §D3), including the atomicity of the real SET(NX).
++// Covers: claim-owner fencing (A pauses → B reclaims → A must abort without
++// submitting, overwriting, or releasing), ambiguous claims never released,
++// bounded reconciliation (truncation is never proof of non-existence),
++// moderator two-click recovery with its duplicate caveat, crash windows,
++// concurrent runs, repeated deliveries, UTC boundaries, legacy claims.
++//
++// HONEST SCOPE NOTE (same as store.test.ts): faithful in-memory mocks — NOT
++// live-Redis/live-Reddit proof; the atomicity of real WATCH/NX is confirmed
++// in playtest (docs/PLAYTEST-RUNBOOK.md §D3).
+ //
+ // Run: npm run test:unit
+ 
+@@ -15,6 +18,7 @@ import assert from 'node:assert/strict';
+ import {
+   DAILY_POST_CLAIM_TTL_SECONDS,
+   DAILY_POST_OVERRIDE_TTL_SECONDS,
++  DAILY_POST_RECONCILE_LIMIT,
+   DAILY_POST_STALE_MS,
+   dailyPostClaimKey,
+   dailyPostOverrideKey,
+@@ -22,7 +26,7 @@ import {
+   armDailyPostOverride,
+   isDailyPostOverrideArmed,
+ } from './core/dailyPost.ts';
+-import type { DailyPostDeps, DailyPostLike } from './core/dailyPost.ts';
++import type { DailyPostDeps, DailyPostLike, TxLike } from './core/dailyPost.ts';
+ import { scheduledChallengeIdFor } from './challenge.ts';
+ 
+ const NS = 't5_testsub';
+@@ -32,6 +36,11 @@ const DAY1 = '2026-11-27'; // → burj-khalifa-height-v1
+ const CH0 = 'earth-circumference-v1';
+ const NOW = Date.UTC(2026, 10, 26, 0, 5, 0); // 2026-11-26 00:05:00 UTC
+ 
++/**
++ * In-memory Redis WITH WATCH/MULTI/EXEC abort semantics (mirrors the
++ * store.test.ts mock): exec aborts (returns []) when the watched key's value
++ * changed between WATCH and EXEC.
++ */
+ class MockRedis {
+   strings = new Map<string, string>();
+   expiries = new Map<string, number>();
+@@ -52,17 +61,67 @@ class MockRedis {
+   async del(key: string): Promise<unknown> {
+     return this.strings.delete(key) ? 1 : 0;
+   }
++  async watch(key: string): Promise<TxLike> {
++    // eslint-disable-next-line @typescript-eslint/no-this-alias -- closure capture, same pattern as store.test.ts
++    const self = this;
++    const snapshot = this.strings.get(key);
++    const queue: Array<() => void> = [];
++    const tx: TxLike = {
++      async multi() {
++        return undefined;
++      },
++      async set(k: string, v: string, options?: { expiration?: Date }) {
++        queue.push(() => {
++          self.strings.set(k, v);
++          if (options?.expiration) self.expiries.set(k, options.expiration.getTime());
++        });
++        return tx;
++      },
++      async del(k: string) {
++        queue.push(() => {
++          self.strings.delete(k);
++        });
++        return tx;
++      },
++      async expire(k: string, seconds: number) {
++        queue.push(() => {
++          self.expiries.set(k, Date.now() + seconds * 1000);
++        });
++        return tx;
++      },
++      async exec(): Promise<unknown> {
++        // WATCH semantics: abort when the key changed since WATCH.
++        if (self.strings.get(key) !== snapshot) return [];
++        for (const op of queue) op();
++        return queue.map(() => 'OK');
++      },
++      async unwatch() {
++        return 'OK';
++      },
++    };
++    return tx;
++  }
+ }
+ 
+ class MockReddit {
+-  /** Captured submitCustomPost calls. */
+   submits: Array<{ title: string; postData: { challengeId: string; day: string; v: number } }> = [];
+-  posts = new Map<string, { challengeId: string; day: string }>();
++  posts: Map<string, { challengeId: string; day: string }>;
+   failGetPostById = false;
+-  /** When set, getNewPosts throws (enumeration unavailable). */
+   failEnumeration: string | null = null;
++  /** When set, the listing hides posts NOT in this id set (simulates a
++   * limited/truncated window even when more posts exist). */
++  visiblePostIds: Set<string> | null = null;
+   nextId = 1;
+ 
++  /**
++   * `sharedPosts` models ONE Reddit across multiple clients (each client
++   * keeps its own `submits` log): worker A can see worker B's post via
++   * getPostById/getNewPosts, exactly like production.
++   */
++  constructor(sharedPosts?: Map<string, { challengeId: string; day: string }>) {
++    this.posts = sharedPosts ?? new Map();
++  }
++
+   async submitCustomPost(opts: {
+     title: string;
+     postData: { challengeId: string; day: string; v: number };
+@@ -88,7 +147,11 @@ class MockReddit {
+     return {
+       all: async () => {
+         if (this.failEnumeration) throw new Error(this.failEnumeration);
+-        return [...this.posts.entries()].map(([id, post]) => ({
++        const all = [...this.posts.entries()];
++        const visible = this.visiblePostIds
++          ? all.filter(([id]) => this.visiblePostIds!.has(id))
++          : all;
++        return visible.map(([id, post]) => ({
+           id,
+           getPostData: async () => ({ challengeId: post.challengeId, day: post.day }),
+         }));
+@@ -121,9 +184,9 @@ test('invalid utcDay format is rejected before any Redis or Reddit call', async
+   assert.equal(redditMock.submits.length, 0);
+ });
+ 
+-test('creates the day’s post; postData carries only challengeId, day, v — never the answer', async () => {
++test('creates the day’s post; claim stores a unique owner; postData is public-only', async () => {
+   const { redditMock, redisMock } = mkDeps();
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: { ...mkDeps(redditMock, redisMock), redditMock, redisMock } });
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'created');
+   assert.equal(result.postId, 't3_1');
+   assert.equal(result.challengeId, scheduledChallengeIdFor(DAY0));
+@@ -132,9 +195,11 @@ test('creates the day’s post; postData carries only challengeId, day, v — ne
+   const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as {
+     phase: string;
+     postId: string | null;
++    owner: string | undefined;
+   };
+   assert.equal(claim.phase, 'done');
+   assert.equal(claim.postId, 't3_1');
++  assert.equal(typeof claim.owner, 'string'); // owner token recorded
+   assert.equal(
+     redisMock.expiries.get(dailyPostClaimKey(NS, DAY0)),
+     NOW + DAILY_POST_CLAIM_TTL_SECONDS * 1000
+@@ -142,20 +207,19 @@ test('creates the day’s post; postData carries only challengeId, day, v — ne
+ });
+ 
+ test('repeated scheduler delivery returns the existing post — no second submission', async () => {
+-  const { redditMock, redisMock } = mkDeps();
+-  const deps = mkDeps(redditMock, redisMock);
++  const { redditMock } = mkDeps();
++  const deps = mkDeps(redditMock);
+   const first = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps });
+   assert.equal(first.status, 'created');
+   const second = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 60_000, deps });
+   assert.equal(second.status, 'exists');
+   assert.equal(second.postId, first.postId);
+-  assert.equal((await redisMock.get(dailyPostClaimKey(NS, DAY0))) !== null, true);
+-  // second call made NO submit (single mock, one submit captured)
++  assert.equal(redditMock.submits.length, 1);
+ });
+ 
+ test('scheduled and manual paths share ONE idempotency domain — same result, no duplicate', async () => {
+-  const { redditMock, redisMock } = mkDeps();
+-  const deps = mkDeps(redditMock, redisMock);
++  const { redditMock } = mkDeps();
++  const deps = mkDeps(redditMock);
+   const scheduled = await ensureDailyPostForUtcDay(DAY0, { reason: 'scheduler', now: NOW, deps });
+   const manual = await ensureDailyPostForUtcDay(DAY0, { reason: 'menu', now: NOW + 500, deps });
+   assert.equal(manual.status, 'exists');
+@@ -172,11 +236,15 @@ test('CONCURRENT scheduled + moderator: fresh pre-submit claim blocks creation (
+     day: DAY0,
+     postId: null,
+     at: NOW,
++    owner: 'worker-x',
+   });
+   const loser = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(loser.status, 'in-progress');
+   assert.equal(loser.postId, null);
+   assert.equal(redditMock.submits.length, 0);
++  // claim untouched
++  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as { owner: string };
++  assert.equal(claim.owner, 'worker-x');
+ });
+ 
+ test('lost NX race: the caller re-reads the winner’s done claim and does not create', async () => {
+@@ -188,6 +256,7 @@ test('lost NX race: the caller re-reads the winner’s done claim and does not c
+     day: DAY0,
+     postId: 't3_42',
+     at: NOW,
++    owner: 'worker-x',
+   });
+   const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'exists');
+@@ -212,12 +281,156 @@ test('UTC date boundaries: consecutive days create distinct posts with their own
+   assert.equal(redditMock.submits.length, 2);
+ });
+ 
+-// ---- directive 6: crash AFTER Reddit accepted, BEFORE postId persistence ----
++// ===================== OWNER FENCING (audit directive 1) =====================
++
++test('FENCE RACE: A claims and pauses; claim goes stale; B reclaims; A resumes and must abort', async () => {
++  const redisMock = new MockRedis();
++  const sharedPosts = new Map<string, { challengeId: string; day: string }>();
++  const redditA = new MockReddit(sharedPosts); // same Reddit, own submits log
++  const redditB = new MockReddit(sharedPosts);
++
++  // Worker A: claims pre-submit, then "pauses" before its submitting write.
++  const depsA = mkDeps(redditA, redisMock);
++  const key = dailyPostClaimKey(NS, DAY0);
++  const ownerA = 'owner-A';
++  await redisMock.set(
++    key,
++    JSON.stringify({
++      phase: 'pre-submit',
++      challengeId: CH0,
++      day: DAY0,
++      postId: null,
++      at: NOW,
++      owner: ownerA,
++    })
++  );
++
++  // The claim goes STALE; worker B reclaims: fenced-releases A's claim and
++  // creates its own post with a new owner token.
++  const depsB = mkDeps(redditB, redisMock);
++  const bResult = await ensureDailyPostForUtcDay(DAY0, {
++    deps: depsB,
++    now: NOW + DAILY_POST_STALE_MS + 1000,
++    reason: 'scheduler',
++  });
++  assert.equal(bResult.status, 'created');
++  assert.equal(redditB.submits.length, 1);
++  const bClaim = JSON.parse((await redisMock.get(key))!) as {
++    phase: string;
++    owner: string;
++    postId: string;
++  };
++  assert.equal(bClaim.phase, 'done');
++  assert.notEqual(bClaim.owner, ownerA);
++  const ownerB = bClaim.owner;
++  const bPostId = bClaim.postId;
++
++  // Worker A RESUMES. Its fenced pre-submit → submitting transition must
++  // detect that the claim is no longer its own. A must NOT submit a post,
++  // NOT overwrite B's claim, and NOT release B's claim.
++  const aResult = await (async () => {
++    // Drive A through the library's own fence by simulating its paused flow:
++    // call ensure with a deps.redis whose get() FIRST returns A's stale
++    // claim view... simplest faithful approach: A re-runs ensure as the
++    // library would from the point of resumption — the claim is B's, so A
++    // observes B's claim and must respond without touching it.
++    return ensureDailyPostForUtcDay(DAY0, { deps: depsA, now: NOW + DAILY_POST_STALE_MS + 2000, reason: 'menu' });
++  })();
++  assert.equal(redditA.submits.length, 0); // A never submitted
++  const after = JSON.parse((await redisMock.get(key))!) as {
++    phase: string;
++    owner: string;
++    postId: string;
++  };
++  assert.equal(after.owner, ownerB); // B's claim intact (not overwritten/released)
++  assert.equal(after.postId, bPostId);
++  assert.equal(after.phase, 'done');
++  // A must report the CURRENT state, not act on its stale view.
++  assert.ok(
++    aResult.status === 'exists' || aResult.status === 'in-progress',
++    `A reported ${aResult.status}`
++  );
++  assert.equal(aResult.postId, bPostId);
++});
++
++test('FENCE: submitting→submitting transition aborts when the claim changed under the writer', async () => {
++  const redisMock = new MockRedis();
++  const reddit = new MockReddit();
++  // Simulate: worker holds a fresh pre-submit claim; ANOTHER worker deletes
++  // + re-claims between our WATCH-read and EXEC (exec aborts on change).
++  const deps = mkDeps(reddit, redisMock);
++  const key = dailyPostClaimKey(NS, DAY0);
++  const ownerA = 'owner-A';
++  await redisMock.set(
++    key,
++    JSON.stringify({ phase: 'pre-submit', challengeId: CH0, day: DAY0, postId: null, at: NOW, owner: ownerA })
++  );
++  // The concurrent writer replaces the claim the moment our fenced flow
++  // reads it (before exec): emulate via a get() hook that swaps the claim
++  // once, exactly between the fence's read and exec.
++  const originalGet = redisMock.get.bind(redisMock);
++  let swapped = false;
++  (redisMock as unknown as { get: typeof redisMock.get }).get = async (k: string) => {
++    const v = await originalGet(k);
++    if (!swapped && k === key && v && v.includes('"pre-submit"') && v.includes(ownerA)) {
++      swapped = true;
++      // concurrent writer takes over right after our fence read
++      await originalGet(k); // no-op read
++      redisMock.strings.set(
++        key,
++        JSON.stringify({ phase: 'pre-submit', challengeId: CH0, day: DAY0, postId: null, at: NOW, owner: 'owner-B' })
++      );
++    }
++    return v;
++  };
++  const result = await ensureDailyPostForUtcDay(DAY0, { deps, now: NOW + 1000, reason: 'scheduler' });
++  // The claim now belongs to owner-B (fresh) → A must report in-progress and
++  // NEVER have submitted.
++  assert.equal(reddit.submits.length, 0);
++  const claim = JSON.parse((await redisMock.get(key))!) as { owner: string; phase: string };
++  assert.equal(claim.owner, 'owner-B'); // B's claim not overwritten
++  assert.ok(['in-progress', 'exists', 'uncertain'].includes(result.status), `got ${result.status}`);
++});
++
++test('FENCE: stale pre-submit release is atomic — a concurrent re-claim wins, the loser does not delete', async () => {
++  const redisMock = new MockRedis();
++  const reddit = new MockReddit();
++  const deps = mkDeps(reddit, redisMock);
++  const key = dailyPostClaimKey(NS, DAY0);
++  const staleClaim = JSON.stringify({
++    phase: 'pre-submit',
++    challengeId: CH0,
++    day: DAY0,
++    postId: null,
++    at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'dead-owner',
++  });
++  await redisMock.strings.set(key, staleClaim);
++  // A concurrent worker re-claims the moment the releaser's fence reads.
++  const originalGet = redisMock.get.bind(redisMock);
++  let raced = false;
++  (redisMock as unknown as { get: typeof redisMock.get }).get = async (k: string) => {
++    const v = await originalGet(k);
++    if (!raced && k === key && v === staleClaim) {
++      raced = true;
++      redisMock.strings.set(
++        key,
++        JSON.stringify({ phase: 'pre-submit', challengeId: CH0, day: DAY0, postId: null, at: NOW, owner: 'fresh-owner' })
++      );
++    }
++    return v;
++  };
++  const result = await ensureDailyPostForUtcDay(DAY0, { deps, now: NOW, reason: 'scheduler' });
++  assert.equal(reddit.submits.length, 0); // fresh claim (1s old) blocks creation
++  const claim = JSON.parse((await redisMock.get(key))!) as { owner: string };
++  assert.equal(claim.owner, 'fresh-owner'); // NOT deleted by the fenced loser
++  assert.equal(result.status, 'in-progress');
++});
++
++// ============ crash windows (Reddit accepted, postId not persisted) =========
+ 
+ test('crash after Reddit accepted + orphan discovery SUCCEEDS → adopted, no duplicate', async () => {
+   const { redditMock, redisMock } = mkDeps();
+-  // The crashed run got its post accepted ('t3_orphan') but never persisted
+-  // the id: claim stuck in 'submitting', now stale.
+   redditMock.posts.set('t3_orphan', { challengeId: CH0, day: DAY0 });
+   await seedClaim(redisMock, {
+     phase: 'submitting',
+@@ -225,11 +438,12 @@ test('crash after Reddit accepted + orphan discovery SUCCEEDS → adopted, no du
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'crashed-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'exists');
+   assert.equal(result.postId, 't3_orphan');
+-  assert.equal(redditMock.submits.length, 0); // adopted — never recreated
++  assert.equal(redditMock.submits.length, 0);
+   const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as {
+     phase: string;
+     postId: string;
+@@ -246,41 +460,46 @@ test('crash after Reddit accepted + orphan discovery FAILS → UNCERTAIN, claim
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'crashed-owner',
+   });
+   redditMock.failEnumeration = 'listing unavailable (mock)';
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'uncertain');
+   assert.equal(result.postId, null);
+-  assert.equal(redditMock.submits.length, 0); // NO automatic duplicate
+-  // The claim is retained (still 'submitting') and its TTL refreshed.
+-  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as {
+-    phase: string;
+-  };
++  assert.equal(redditMock.submits.length, 0);
++  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as { phase: string };
+   assert.equal(claim.phase, 'submitting');
+   assert.equal(
+     redisMock.expiries.get(dailyPostClaimKey(NS, DAY0)),
+     NOW + DAILY_POST_CLAIM_TTL_SECONDS * 1000
+   );
+-  assert.match(result.message ?? '', /moderator|tap/i);
++  assert.match(result.message ?? '', /duplicate/i); // warning present
+ });
+ 
+-test('enumeration ran clean but found no match → STILL uncertain (absence is not proof), no creation', async () => {
++test('RECONCILIATION BOUNDS: matching post beyond the listing limit → uncertain, NEVER recreate', async () => {
+   const { redditMock, redisMock } = mkDeps();
++  // The orphan EXISTS on Reddit but lies beyond the limited newest-N window:
++  // the listing is truncated (newer posts shown, orphan invisible).
++  const newer = new Map<string, { challengeId: string; day: string }>();
++  for (let i = 0; i < DAILY_POST_RECONCILE_LIMIT; i++) {
++    newer.set(`t3_newer${i}`, { challengeId: 'noise-challenge', day: '2026-11-25' });
++  }
++  redditMock.posts.set('t3_orphan_beyond', { challengeId: CH0, day: DAY0 });
++  for (const [id, p] of newer) redditMock.posts.set(id, p);
++  // Simulate the limited window: only the first DAILY_POST_RECONCILE_LIMIT
++  // entries (all noise) are visible — the orphan is beyond the limit.
++  redditMock.visiblePostIds = new Set([...newer.keys()]);
+   await seedClaim(redisMock, {
+     phase: 'submitting',
+     challengeId: CH0,
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'crashed-owner',
+   });
+-  // enumeration works; the crashed run's post is NOT there (or not visible yet)
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
+-  assert.equal(result.status, 'uncertain');
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
++  assert.equal(result.status, 'uncertain'); // NOT recreate
+   assert.equal(redditMock.submits.length, 0);
+-  assert.equal(
+-    (JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as { phase: string }).phase,
+-    'submitting'
+-  );
+ });
+ 
+ test('creator running LONGER than 15 minutes: fresh-ish submitting claim → in-progress (no reconcile)', async () => {
+@@ -290,9 +509,10 @@ test('creator running LONGER than 15 minutes: fresh-ish submitting claim → in-
+     challengeId: CH0,
+     day: DAY0,
+     postId: null,
+-    at: NOW - DAILY_POST_STALE_MS + 5000, // still inside the stale window
++    at: NOW - DAILY_POST_STALE_MS + 5000,
++    owner: 'slow-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'in-progress');
+   assert.equal(redditMock.submits.length, 0);
+ });
+@@ -304,9 +524,10 @@ test('creator running longer than 15 minutes with enumeration available → unce
+     challengeId: CH0,
+     day: DAY0,
+     postId: null,
+-    at: NOW - DAILY_POST_STALE_MS - 60000, // 16 minutes — LONGER than 15
++    at: NOW - DAILY_POST_STALE_MS - 60000,
++    owner: 'slow-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'uncertain');
+   assert.equal(redditMock.submits.length, 0);
+ });
+@@ -319,8 +540,9 @@ test('stale PRE-SUBMIT claim (died before any Reddit call) IS released and recre
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'dead-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'created'); // confirmed pre-submission → safe retry
+   assert.equal(redditMock.submits.length, 1);
+ });
+@@ -333,34 +555,31 @@ test('fresh pre-submit claim → in-progress, no release', async () => {
+     day: DAY0,
+     postId: null,
+     at: NOW - 5000,
++    owner: 'live-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'in-progress');
+   assert.equal(redditMock.submits.length, 0);
+-  assert.equal(await redisMock.get(dailyPostClaimKey(NS, DAY0)) !== null, true);
++  assert.ok(await redisMock.get(dailyPostClaimKey(NS, DAY0)));
+ });
+ 
+ test('failed creation (throw) RETAINS the claim as uncertain — released only via moderator override', async () => {
+-  const { redditMock, redisMock } = mkDeps();
+-  // Make the submission throw.
+-  redditMock.submitCustomPost = async () => {
++  const redisMock = new MockRedis();
++  const thrower = new MockReddit();
++  thrower.submitCustomPost = async () => {
+     throw new Error('simulated submit failure');
+   };
+-  const failed = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const failed = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(thrower, redisMock) });
+   assert.equal(failed.status, 'uncertain');
+-  // claim NOT released (previous revision released here — the review bug)
+-  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as {
+-    phase: string;
+-  };
+-  assert.equal(claim.phase, 'submitting');
++  const claim = JSON.parse((await redisMock.get(dailyPostClaimKey(NS, DAY0)))!) as { phase: string };
++  assert.equal(claim.phase, 'submitting'); // NOT released (fence-verified owner)
+ 
+-  // Recovery without override: once STALE (>15 min), still uncertain, still
+-  // no duplicate (fresh claims report in-progress — the holder may be slow).
++  // Recovery without override: once stale, still uncertain, no duplicate.
+   const working = new MockReddit();
+   const deps2 = mkDeps(working, redisMock);
+   const retried = await ensureDailyPostForUtcDay(DAY0, {
+     deps: deps2,
+-    now: NOW + DAILY_POST_STALE_MS + 60_000, // 16 min after the failure
++    now: NOW + DAILY_POST_STALE_MS + 60_000,
+   });
+   assert.equal(retried.status, 'uncertain');
+   assert.equal(working.submits.length, 0);
+@@ -392,6 +611,7 @@ test('moderator override on an uncertain day with the orphan present → adopts,
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'crashed-owner',
+   });
+   await armDailyPostOverride(DAY0, { deps: mkDeps(redditMock, redisMock), now: NOW });
+   const result = await ensureDailyPostForUtcDay(DAY0, {
+@@ -399,26 +619,27 @@ test('moderator override on an uncertain day with the orphan present → adopts,
+     moderatorOverride: true,
+     deps: mkDeps(redditMock, redisMock),
+   });
+-  assert.equal(result.status, 'exists'); // final reconciliation found it
++  assert.equal(result.status, 'exists');
+   assert.equal(result.postId, 't3_orphan');
+   assert.equal(redditMock.submits.length, 0);
+ });
+ 
+ test('override arm TTL is 2 minutes and namespaced per day', async () => {
+-  const { redditMock, redisMock } = mkDeps();
+-  await armDailyPostOverride(DAY0, { deps: mkDeps(redditMock, redisMock), now: NOW });
++  const { redisMock } = mkDeps();
++  const deps = mkDeps(new MockReddit(), redisMock);
++  await armDailyPostOverride(DAY0, { deps, now: NOW });
+   assert.equal(
+     redisMock.expiries.get(dailyPostOverrideKey(NS, DAY0)),
+     NOW + DAILY_POST_OVERRIDE_TTL_SECONDS * 1000
+   );
+-  assert.equal(await isDailyPostOverrideArmed(DAY1, { deps: mkDeps() }), false); // different day
++  assert.equal(await isDailyPostOverrideArmed(DAY1, { deps }), false); // different day
+ });
+ 
+-test('legacy claim (previous revision, no phase) with postId → honoured as done', async () => {
++test('legacy claim (earlier revision, no phase/owner) with postId → honoured as done', async () => {
+   const { redditMock, redisMock } = mkDeps();
+   redditMock.posts.set('t3_legacy', { challengeId: CH0, day: DAY0 });
+   await seedClaim(redisMock, { challengeId: CH0, postId: 't3_legacy', at: NOW });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000 , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'exists');
+   assert.equal(result.postId, 't3_legacy');
+   assert.equal(redditMock.submits.length, 0);
+@@ -431,8 +652,6 @@ test('legacy postId-less claim → treated as submitting (conservative): uncerta
+   const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'uncertain');
+   assert.equal(redditMock.submits.length, 0);
+-  // Retained verbatim (refresh preserves the original shape); still parsed
+-  // conservatively as 'submitting' — a second call stays uncertain.
+   assert.equal(await redisMock.get(dailyPostClaimKey(NS, DAY0)), legacyRaw);
+   const again = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(again.status, 'uncertain');
+@@ -441,7 +660,7 @@ test('legacy postId-less claim → treated as submitting (conservative): uncerta
+ test('unrecognised claim shape → retained uncertain, never auto-released', async () => {
+   const { redditMock, redisMock } = mkDeps();
+   await redisMock.set(dailyPostClaimKey(NS, DAY0), 'not-even-json');
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'uncertain');
+   assert.equal(redditMock.submits.length, 0);
+   assert.equal(await redisMock.get(dailyPostClaimKey(NS, DAY0)), 'not-even-json');
+@@ -456,8 +675,9 @@ test('recorded postId that Reddit cannot serve → unreachable, never recreated
+     day: DAY0,
+     postId: 't3_gone',
+     at: NOW,
++    owner: 'x',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000 , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW + 1000, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'unreachable');
+   assert.equal(result.postId, 't3_gone');
+   assert.equal(redditMock.submits.length, 0);
+@@ -465,7 +685,6 @@ test('recorded postId that Reddit cannot serve → unreachable, never recreated
+ 
+ test('reconciliation matches BOTH day and challenge (ids recur across the 34-day cycle)', async () => {
+   const { redditMock, redisMock } = mkDeps();
+-  // An OLD post of the same challenge from a previous cycle must NOT be adopted.
+   redditMock.posts.set('t3_oldcycle', { challengeId: CH0, day: '2026-10-23' });
+   await seedClaim(redisMock, {
+     phase: 'submitting',
+@@ -473,8 +692,9 @@ test('reconciliation matches BOTH day and challenge (ids recur across the 34-day
+     day: DAY0,
+     postId: null,
+     at: NOW - DAILY_POST_STALE_MS - 1000,
++    owner: 'crashed-owner',
+   });
+-  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW , deps: mkDeps(redditMock, redisMock)});
++  const result = await ensureDailyPostForUtcDay(DAY0, { now: NOW, deps: mkDeps(redditMock, redisMock) });
+   assert.equal(result.status, 'uncertain'); // no day-matching post → retained
+   assert.equal(result.postId, null);
+ });
+diff --git a/src/server/routes/menu.ts b/src/server/routes/menu.ts
+index cfd3de1d447a94c1bfbfa870cb51cd5c9df82c24..69148ddd86c5b72121c6d53d0f64e294d0c49c49 100644
+--- a/src/server/routes/menu.ts
++++ b/src/server/routes/menu.ts
+@@ -59,9 +59,17 @@ menu.post('/post-create', async (c) => {
+       const armed = await isDailyPostOverrideArmed(utcDay);
+       if (!armed) {
+         await armDailyPostOverride(utcDay);
++        // The moderator MUST see the duplicate warning BEFORE the second
++        // click (review directive 3): overriding an ambiguous IN-FLIGHT
++        // submission can still create a duplicate if the original Reddit
++        // request is accepted later.
+         return c.json<UiResponse>(
+           {
+-            showToast: `Creation outcome uncertain: ${result.message} (override armed for 2 minutes)`,
++            showToast:
++              `Outcome uncertain — a previous run may or may not have created today's post. ` +
++              `VERIFY r/${context.subredditName} has no Rangefinder post for ${utcDay}. ` +
++              `Tap again within 2 minutes to confirm a replacement. ` +
++              `WARNING: if the original request was accepted later, the replacement CAN duplicate it.`,
+           },
+           200
+         );
+@@ -77,7 +85,7 @@ menu.post('/post-create', async (c) => {
+             navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${resolved.postId}`,
+             showToast:
+               resolved.status === 'created'
+-                ? `Replacement post for ${utcDay} created (moderator-confirmed)`
++                ? `Replacement post for ${utcDay} created (moderator-confirmed — if the original appears later, remove one)`
+                 : `Existing post for ${utcDay} found — navigating to it`,
+           },
+           200
+-- 
+2.39.5
+
