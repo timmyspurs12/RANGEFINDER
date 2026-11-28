@@ -7,3 +7,6 @@ tmp/
 
 # Release artifacts (distributed via session file viewer, not committed)
 artifacts/
+
+# v4 preview build output (removed with the v4 revert)
+preview-dist/

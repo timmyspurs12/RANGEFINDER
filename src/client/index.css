@@ -847,3 +847,407 @@ body {
     transition: none !important;
   }
 }
+
+/* ============ STAGE 3.7 — ROUND 1 additions ============ */
+
+/* Splash with tutorial: compress the plate so CTA stays above the fold */
+.rf-splash-t .rf-plate {
+  max-width: 420px;
+}
+
+/* ---- Ghost-hand tutorial (pure CSS, ~6.5s loop) ---- */
+
+.gt {
+  margin: 10px 22px 0;
+  border: 1px solid var(--rf-hair);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--rf-enamel-hi), var(--rf-enamel-deep));
+  padding: 10px 14px 8px;
+}
+
+.gt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gt-title {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--rf-brass-dark);
+  text-transform: uppercase;
+}
+
+.gt-skip {
+  background: none;
+  border: 1px solid var(--rf-hair);
+  border-radius: 999px;
+  color: var(--rf-soft);
+  font: 600 11px Arial, Helvetica, sans-serif;
+  letter-spacing: 0.08em;
+  padding: 4px 12px;
+  cursor: pointer;
+  min-height: 28px;
+}
+.gt-skip:active {
+  transform: translateY(1px);
+}
+.gt-skip:focus-visible {
+  outline: 2px solid var(--rf-ink);
+  outline-offset: 2px;
+}
+
+.gt-stage {
+  margin-top: 8px;
+}
+
+.gt-rail {
+  position: relative;
+  height: 40px;
+  border-radius: 8px;
+  border: 1.5px solid #050604;
+  overflow: visible;
+  background:
+    repeating-linear-gradient(90deg, var(--rf-porc-line) 0 1px, transparent 1px 7.2px),
+    linear-gradient(180deg, var(--rf-drum-hi), var(--rf-drum) 55%, var(--rf-drum-lo));
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.6);
+}
+
+.gt-window {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--rf-window-hi), var(--rf-window) 60%, var(--rf-window-lo));
+  animation: gt-window 6.5s ease-in-out infinite;
+}
+@keyframes gt-window {
+  0%, 8% { left: 30%; width: 34%; }
+  20%, 32% { left: 44%; width: 18%; }
+  44%, 64% { left: 12%; width: 76%; }
+  82%, 100% { left: 30%; width: 34%; }
+}
+
+.gt-thumb {
+  position: absolute;
+  top: 3px;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, var(--rf-brass-hi), var(--rf-brass) 55%, #87621e);
+  border: 1.5px solid var(--rf-brass-line);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.4);
+}
+.gt-thumb-lo { animation: gt-lo 6.5s ease-in-out infinite; }
+.gt-thumb-hi { animation: gt-hi 6.5s ease-in-out infinite; }
+@keyframes gt-lo {
+  0%, 8% { left: 30%; }
+  20%, 100% { left: 44%; }
+}
+@keyframes gt-hi {
+  0%, 8% { left: 64%; }
+  44%, 100% { left: 88%; }
+}
+
+.gt-hand {
+  position: absolute;
+  top: 30px;
+  width: 24px;
+  height: 24px;
+  margin-left: -12px;
+  border-radius: 50%;
+  border: 2px solid var(--rf-porc);
+  background: rgba(248, 244, 228, 0.25);
+  animation: gt-hand 6.5s ease-in-out infinite;
+  opacity: 0.9;
+}
+@keyframes gt-hand {
+  0% { left: 30%; top: 44px; opacity: 0; }
+  6% { left: 30%; top: 26px; opacity: 1; }
+  12%, 18% { left: 30%; top: 26px; opacity: 1; }
+  20% { left: 44%; top: 26px; opacity: 1; }
+  30% { left: 44%; top: 44px; opacity: 0; }
+  38% { left: 64%; top: 26px; opacity: 1; }
+  44% { left: 64%; top: 26px; opacity: 1; }
+  50% { left: 88%; top: 26px; opacity: 1; }
+  58% { left: 88%; top: 44px; opacity: 0; }
+  100% { left: 30%; top: 44px; opacity: 0; }
+}
+
+.gt-scale {
+  position: relative;
+  height: 14px;
+  margin-top: 5px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9.5px;
+  color: var(--rf-soft);
+}
+.gt-scale span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.gt-scale span:nth-child(1) { left: 2%; }
+.gt-scale span:nth-child(2) { left: 34%; }
+.gt-scale span:nth-child(3) { left: 67%; }
+.gt-scale span:nth-child(4) { left: 98%; }
+
+.gt-caps {
+  position: relative;
+  height: 24px;
+  margin-top: 4px;
+}
+.gt-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--rf-ink);
+  opacity: 0;
+}
+.gt-cap-a { animation: gt-capa 6.5s ease-in-out infinite; }
+.gt-cap-b { animation: gt-capb 6.5s ease-in-out infinite; }
+@keyframes gt-capa {
+  0%, 8% { opacity: 0; }
+  14%, 30% { opacity: 1; }
+  38%, 100% { opacity: 0; }
+}
+@keyframes gt-capb {
+  0%, 42% { opacity: 0; }
+  50%, 66% { opacity: 1; }
+  74%, 100% { opacity: 0; }
+}
+
+.gt-line {
+  margin: 8px 0 0;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--rf-soft);
+  text-align: center;
+}
+.gt-line b {
+  color: var(--rf-ink);
+  font-style: normal;
+}
+
+.gt-demo {
+  margin: 6px 0 2px;
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--rf-faint);
+  text-transform: uppercase;
+}
+
+/* ---- Editable porcelain counters ---- */
+
+.rf-counter.as-btn {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 70ms ease;
+}
+.rf-counter.as-btn:active {
+  transform: translateY(2px);
+}
+.rf-counter.as-btn:focus-visible {
+  outline: 2px solid var(--rf-brass-dark);
+  outline-offset: 2px;
+}
+.rf-counter.is-editing {
+  outline: 2px solid var(--rf-brass-dark);
+  outline-offset: 1px;
+}
+
+.rf-c-input {
+  width: 100%;
+  min-width: 0;
+  font-family: ui-monospace, Consolas, Menlo, monospace;
+  font-size: clamp(18px, 5vw, 26px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--rf-ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+}
+
+.rf-c-err {
+  margin: 6px 18px 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rf-verm);
+  text-align: center;
+}
+
+/* ---- Live preview strip (answer-independent) ---- */
+
+.rf-preview {
+  margin: 14px 14px 0;
+  border: 1.5px solid var(--rf-ink);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--rf-porc), #efe9d3);
+  box-shadow: 0 3px 0 rgba(25, 28, 23, 0.2);
+  padding: 10px 14px 8px;
+}
+
+.rf-prev-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.rf-prev-cell,
+.rf-prev-band {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rf-prev-band {
+  flex: 1;
+}
+
+.rf-prev-lab {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--rf-soft);
+  text-transform: uppercase;
+}
+
+.rf-prev-num {
+  font-family: ui-monospace, Consolas, Menlo, monospace;
+  font-size: clamp(14px, 4.4vw, 18px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rf-prev-catch {
+  margin-left: auto;
+  text-align: right;
+}
+.rf-prev-catch .rf-prev-num {
+  color: var(--rf-brass-dark);
+}
+
+.rf-prev-meter {
+  position: relative;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--rf-hair);
+  background: linear-gradient(90deg, var(--rf-window-hi), var(--rf-window) 60%, var(--rf-verm-soft));
+}
+.rf-prev-meter i {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--rf-ink);
+  border-radius: 1.5px;
+}
+
+.rf-prev-note {
+  margin: 7px 0 2px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--rf-faint);
+  text-align: center;
+}
+
+/* ---- Armed lock button (text change + outline, never color-only) ---- */
+
+.rf-btn.is-armed {
+  background: var(--rf-porc);
+  color: var(--rf-ink);
+  border-color: var(--rf-ink);
+  box-shadow: 0 4px 0 var(--rf-ink), 0 10px 16px rgba(25, 28, 23, 0.2);
+  animation: rf-armed 0.9s ease-in-out 2;
+}
+@keyframes rf-armed {
+  50% {
+    transform: translateY(1px);
+  }
+}
+
+/* ---- Decade tick pulse on snap ---- */
+
+.rf-decmark.is-pulse {
+  width: 4px;
+  margin-left: -1.2px;
+  background: var(--rf-porc);
+  animation: rf-tickpulse 0.26s ease-out 1;
+}
+@keyframes rf-tickpulse {
+  0% {
+    transform: scaleY(0.6);
+    opacity: 0.5;
+  }
+  60% {
+    transform: scaleY(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gt-window,
+  .gt-thumb-lo,
+  .gt-thumb-hi {
+    animation: none !important;
+    left: 12% !important;
+  }
+  .gt-window {
+    left: 12% !important;
+    width: 76% !important;
+  }
+  .gt-thumb-lo {
+    left: 12% !important;
+  }
+  .gt-thumb-hi {
+    left: 88% !important;
+  }
+  .gt-hand {
+    animation: none !important;
+    display: none;
+  }
+  .gt-cap-a,
+  .gt-cap-b {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .gt-cap-b {
+    position: static;
+    display: block;
+    margin-top: 4px;
+  }
+  .gt-caps {
+    height: auto;
+  }
+  .rf-btn.is-armed,
+  .rf-decmark.is-pulse {
+    animation: none !important;
+  }
+}

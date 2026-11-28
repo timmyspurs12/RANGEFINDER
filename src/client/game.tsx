@@ -10,6 +10,7 @@ import type {
   StateResponse,
   SubmitResponse,
 } from '../shared/api';
+import { formatUtcDayLabel } from '../shared/dayKey';
 import { ChallengeCard } from './components/ChallengeCard';
 import { ResultReveal } from './components/ResultReveal';
 
@@ -173,6 +174,46 @@ export const App = () => {
       setMode((prev) => ({ ...prev, phase: 'failed', message }));
     }
   }, [mode.challenge, mode.l, mode.u]);
+  // Two-stage lock: a short press arms ("tap again to confirm"), a sustained
+  // ~550 ms hold locks immediately. Prevents accidental submissions.
+  const [armed, setArmed] = useState(false);
+  const holdTimer = useRef<number | null>(null);
+  const armTimer = useRef<number | null>(null);
+  const HOLD_MS = 550;
+  const disarm = useCallback((): void => {
+    setArmed(false);
+    if (armTimer.current !== null) window.clearTimeout(armTimer.current);
+  }, []);
+  useEffect(
+    () => () => {
+      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+      if (armTimer.current !== null) window.clearTimeout(armTimer.current);
+    },
+    []
+  );
+  const beginPress = useCallback((): void => {
+    if (mode.phase !== 'ready' && mode.phase !== 'failed') return;
+    if (armed) {
+      disarm();
+      void submit();
+      return;
+    }
+    if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+    holdTimer.current = window.setTimeout(() => {
+      holdTimer.current = null;
+      void submit();
+    }, HOLD_MS);
+  }, [armed, disarm, mode.phase, submit]);
+  const endPress = useCallback((): void => {
+    if (holdTimer.current !== null) {
+      // Released before the hold completed: arm for a confirm tap.
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+      setArmed(true);
+      if (armTimer.current !== null) window.clearTimeout(armTimer.current);
+      armTimer.current = window.setTimeout(disarm, 4000);
+    }
+  }, [disarm]);
 
   if (mode.phase === 'loading') {
     return (
@@ -206,9 +247,7 @@ export const App = () => {
     <header className="rf-nameplate">
       <span className="rf-brand">RANGEFINDER</span>
       <span className="rf-rule" aria-hidden="true" />
-      <span className="rf-meta">
-        {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()}
-      </span>
+      <span className="rf-meta">{formatUtcDayLabel()}</span>
     </header>
   );
 
@@ -257,16 +296,35 @@ export const App = () => {
         </div>
       ) : null}
       <button
-        className="rf-btn"
+        className={`rf-btn${armed ? ' is-armed' : ''}`}
         style={{ marginTop: 'auto', width: '100%' }}
         disabled={mode.phase === 'submitting'}
-        onClick={() => void submit()}
+        aria-live="polite"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          beginPress();
+        }}
+        onPointerUp={endPress}
+        onPointerLeave={endPress}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+            e.preventDefault();
+            beginPress();
+          }
+        }}
+        onKeyUp={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') endPress();
+        }}
       >
         {mode.phase === 'submitting' ? (
           <>
             <span className="rf-spin" aria-hidden="true" />
             Locking…
           </>
+        ) : armed ? (
+          '▸▸ Tap again to confirm'
+        ) : mode.phase === 'ready' ? (
+          'Hold to lock · or tap twice'
         ) : (
           'Lock estimate'
         )}

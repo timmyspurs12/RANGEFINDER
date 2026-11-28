@@ -23,6 +23,7 @@ export default defineConfig([
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['src/shared/**/*.{ts,tsx,mjs,cjs,js}'],
+    ignores: ['src/shared/**/*.test.ts'],
     languageOptions: {
       ecmaVersion: 2023,
       globals: globals.browser,
@@ -81,6 +82,11 @@ export default defineConfig([
   },
   {
     files: ['src/server/**/*.test.ts'],
+    languageOptions: { ecmaVersion: 2023, globals: globals.node },
+    rules: { '@typescript-eslint/no-floating-promises': 'off' },
+  },
+  {
+    files: ['src/shared/**/*.test.ts'],
     languageOptions: { ecmaVersion: 2023, globals: globals.node },
     rules: { '@typescript-eslint/no-floating-promises': 'off' },
   },
