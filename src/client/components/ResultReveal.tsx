@@ -72,10 +72,10 @@ export const ResultReveal = ({
     t(() => {
       if (result.caught) {
         setShake(true);
-        window.setTimeout(() => setShake(false), 550);
+        window.setTimeout(() => setShake(false), 400);
       } else if (missDistance !== null && missDistance < NEAR_MISS_DECADES) {
         setRock(true);
-        window.setTimeout(() => setRock(false), 550);
+        window.setTimeout(() => setRock(false), 450);
       }
     }, 2050);
     t(() => setPhase('story'), 3250);
@@ -146,6 +146,21 @@ export const ResultReveal = ({
   });
   const isStory = phase === 'story';
   const date = formatUtcDayLabel();
+
+  // Countdown to the next UTC challenge (single date source: UTC arithmetic,
+  // same convention as shared/dayKey). Ticks only once the story is visible.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isStory) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [isStory]);
+  const cd = new Date(now);
+  const nextUtcMidnight = Date.UTC(cd.getUTCFullYear(), cd.getUTCMonth(), cd.getUTCDate() + 1);
+  const msLeft = Math.max(0, nextUtcMidnight - now);
+  const hh = String(Math.floor(msLeft / 3600000)).padStart(2, '0');
+  const mm = String(Math.floor((msLeft % 3600000) / 60000)).padStart(2, '0');
+  const ss = String(Math.floor((msLeft % 60000) / 1000)).padStart(2, '0');
 
   return (
     <div
@@ -284,6 +299,9 @@ export const ResultReveal = ({
             <p className="rf-daily">Be among the first today — {daily.players} playing so far</p>
           )
         ) : null}
+        <p className="rf-countdown" role="timer" aria-label="Time until the next challenge">
+          Next challenge in <b>{hh}:{mm}:{ss}</b> UTC
+        </p>
         <p className="rf-answer">
           Verified answer: <b>{result.answerLabel} {result.unit}</b> —{' '}
           {result.caught ? (

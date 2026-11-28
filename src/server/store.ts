@@ -11,7 +11,7 @@
 // - Drafts are temporary (48 h TTL) and never touch aggregate state.
 
 import { MIN_SUBMISSIONS_FOR_PERCENTILE } from '../shared/community.ts';
-import { percentileFromRank } from '../shared/community.ts';
+import { percentileFromLowerCount } from '../shared/community.ts';
 
 export const DRAFT_TTL_SECONDS = 48 * 3600; // 48 h
 export const CHALLENGE_TTL_SECONDS = 35 * 24 * 3600; // 35 d
@@ -81,12 +81,27 @@ export interface RfRedisClient {
   hGetAll(key: string): Promise<Record<string, string>>;
   watch(key: string): Promise<RfTx>;
   zRem?(key: string, members: string[]): Promise<unknown>;
+  /** Optional: present on the production client; used for stats logging. */
+  zCard?(key: string): Promise<number | unknown>;
 }
 
 /** Narrow read surface for daily stats (production client satisfies it). */
+/**
+ * Read surface for daily stats. Ties are resolved STRICTLY: the percentile
+ * counts members with a LOWER score than the caller's (ZRANGE BYSCORE with an
+ * exclusive upper bound), so two players with the same score never count each
+ * other as "beaten". zScore/zRange are optional because the @devvit/test
+ * RedisMock does not model sorted sets; stats are then simply unavailable.
+ */
 export interface DailyStatsClient {
   zCard(key: string): Promise<number | unknown>;
-  zRank(key: string, member: string): Promise<number | null | undefined | unknown>;
+  zScore?(key: string, member: string): Promise<number | null | undefined | unknown>;
+  zRange?(
+    key: string,
+    start: number | string,
+    stop: number | string,
+    options?: { by: 'score' }
+  ): Promise<{ member: string; score: number }[] | unknown>;
 }
 
 export type SubmissionRecordJson = {
@@ -195,6 +210,12 @@ export async function submitEstimate(
     if (tx.zAdd) {
       await tx.zAdd(scoresKey(challengeId), { member: userId, score: record.S });
       await tx.expire(scoresKey(challengeId), CHALLENGE_TTL_SECONDS);
+    } else {
+      // Never silently skip: if this fires in production the SDK dropped or
+      // changed zAdd on TxClient — the submission itself is unaffected.
+      console.warn(
+        `[rangefinder:stats] tx.zAdd unavailable on this Redis client — daily score for ${userId} NOT recorded (submission itself accepted)`
+      );
     }
     let execResult: unknown;
     try {
@@ -218,6 +239,19 @@ export async function submitEstimate(
       execResult.length === 0
     ) {
       continue; // watched key changed under us — retry
+    }
+    // Playtest visibility: one log line per accepted submission so the daily
+    // ZSET write and the live player count can be confirmed from the server
+    // log (see docs/PLAYTEST-RUNBOOK.md). Logging must never break the
+    // submission, hence the catch-and-continue shape.
+    try {
+      const card = await client.zCard?.(scoresKey(challengeId));
+      const count = typeof card === 'number' ? card : 'unknown';
+      console.log(
+        `[rangefinder:stats] accepted submission — ${scoresKey(challengeId)} players now: ${count}`
+      );
+    } catch (logError) {
+      console.warn('[rangefinder:stats] post-commit count read failed:', logError);
     }
     return { status: 'stored', record };
   }
@@ -266,9 +300,17 @@ export async function getDailyStats(
   if (players < MIN_SUBMISSIONS_FOR_PERCENTILE) {
     return { players, percentile: null };
   }
-  const rank = await client.zRank(key, userId);
-  if (typeof rank !== 'number' || !Number.isFinite(rank)) {
+  const myRaw = client.zScore ? await client.zScore(key, userId) : undefined;
+  if (typeof myRaw !== 'number' || !Number.isFinite(myRaw)) {
     return { players, percentile: null }; // not submitted yet, or read hiccup
   }
-  return { players, percentile: percentileFromRank(rank, players) };
+  // Strictly-lower count: ZRANGE -inf '(' + myScore BYSCORE excludes ties —
+  // a player with the same score is never counted as "beaten".
+  const lowerRaw = client.zRange
+    ? await client.zRange(key, '-inf', `(${String(myRaw)}`, { by: 'score' })
+    : undefined;
+  if (!Array.isArray(lowerRaw)) {
+    return { players, percentile: null }; // zRange unavailable (e.g. harness mock)
+  }
+  return { players, percentile: percentileFromLowerCount(lowerRaw.length, players) };
 }

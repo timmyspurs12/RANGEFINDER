@@ -1459,7 +1459,7 @@ body {
 
 /* Screen shake (caught) and gentle rock (near miss) */
 .rf-result.rf-shake {
-  animation: rf-shake 0.5s ease-out 1;
+  animation: rf-shake 0.35s ease-out 1; /* hardening pass: < 400ms */
 }
 @keyframes rf-shake {
   20% { transform: translate(-3px, 1px); }
@@ -1468,7 +1468,7 @@ body {
   80% { transform: translate(2px, -1px); }
 }
 .rf-result.rf-rock {
-  animation: rf-rock 0.55s ease-in-out 1;
+  animation: rf-rock 0.4s ease-in-out 1;
 }
 @keyframes rf-rock {
   25% { transform: rotate(-0.7deg); }
@@ -1516,6 +1516,21 @@ body {
   font-size: 14px;
   line-height: 1.45;
   color: var(--rf-soft);
+}
+
+.rf-countdown {
+  margin: 6px 22px 0;
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rf-soft);
+}
+.rf-countdown b {
+  color: var(--rf-brass-dark);
+  font-variant-numeric: tabular-nums;
 }
 
 .rf-daily {

@@ -123,6 +123,7 @@ async function captureReveal(port, label, vpName, width, height) {
 for (const vp of [
   { name: '400', width: 400, height: 620 },
   { name: '719x545', width: 719, height: 545 },
+  { name: 'desktop', width: 1280, height: 800 },
 ]) {
   await captureReveal(8899, 'caught', vp.name, vp.width, vp.height);
   await captureReveal(8901, 'miss', vp.name, vp.width, vp.height);

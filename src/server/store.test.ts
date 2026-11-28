@@ -473,13 +473,40 @@ class MockRedisWithZSets extends MockRedis {
     return this.zsets.get(key)?.size ?? 0;
   }
 
-  async zRank(key: string, member: string): Promise<number | null> {
-    const z = this.zsets.get(key);
-    if (!z || !z.has(member)) return null;
-    // Ascending by score; ties broken lexicographically (Redis behaviour).
-    const sorted = [...z.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1));
-    return sorted.findIndex(([m]) => m === member);
+  async zScore(key: string, member: string): Promise<number | undefined> {
+    return this.zsets.get(key)?.get(member);
   }
+
+  /** Only `by: 'score'` supported — mirrors ZRANGE -inf '(<score>' semantics. */
+  async zRange(
+    key: string,
+    start: number | string,
+    stop: number | string,
+    options?: { by: 'score' }
+  ): Promise<{ member: string; score: number }[]> {
+    if (!options || options.by !== 'score') {
+      throw new Error('mock: only zRange byScore is implemented');
+    }
+    const lo = parseScoreBound(start, Number.NEGATIVE_INFINITY);
+    const hi = parseScoreBound(stop, Number.POSITIVE_INFINITY);
+    const z = this.zsets.get(key);
+    if (!z) return [];
+    return [...z.entries()]
+      .filter(([m, sc]) => {
+        void m;
+        return (lo.exclusive ? sc > lo.value : sc >= lo.value) && (hi.exclusive ? sc < hi.value : sc <= hi.value);
+      })
+      .sort((a, b) => a[1] - b[1])
+      .map(([member, score]) => ({ member, score }));
+  }
+}
+
+function parseScoreBound(bound: number | string, infinite: number): { value: number; exclusive: boolean } {
+  if (typeof bound === 'number') return { value: bound, exclusive: false };
+  if (bound === '-inf') return { value: Number.NEGATIVE_INFINITY, exclusive: false };
+  if (bound === '+inf') return { value: Number.POSITIVE_INFINITY, exclusive: false };
+  if (bound.startsWith('(')) return { value: Number(bound.slice(1)), exclusive: true };
+  return { value: Number(bound), exclusive: false };
 }
 
 const makeRec = (S: number, at: number): SubmissionRecordJson => ({ ...makeRecord(at), S });
@@ -549,7 +576,8 @@ test('getDailyStats: count always real; percentile only at ≥10 players', async
   // USER's 75 lands as the 10th submission — exactly at the threshold.
   await submitEstimate(r, CH, USER, makeRec(75, 2000));
   const stats = await getDailyStats(r, CH, USER);
-  // ascending: 10..90 then 75 → rank 7 of 10
+  // strictly lower than 75: 10..90 minus 90? no — scores are 10,20,...,90 and 75;
+  // lower than 75: 10,20,30,40,50,60,70 → 7 of 10
   assert.equal(stats.players, 10);
   assert.equal(stats.percentile, Math.round((7 / 10) * 100));
 
@@ -566,4 +594,57 @@ test('getDailyStats: caller without a submission gets the count but no percentil
   const stats = await getDailyStats(r, CH, 't2_nobody');
   assert.equal(stats.players, 12);
   assert.equal(stats.percentile, null);
+});
+
+test('percentile ties: equal scores never count each other as beaten', async () => {
+  const r = new MockRedisWithZSets();
+  const scores: Array<[string, number]> = [
+    ['t2_a', 40],
+    ['t2_b', 50],
+    ['t2_c', 70],
+    ['t2_d', 70],
+    ['t2_e', 70],
+    ['t2_f', 45],
+    ['t2_g', 55],
+    ['t2_h', 60],
+    ['t2_i', 65],
+    ['t2_j', 90],
+  ]; // 10 players — past the visibility threshold
+  for (const [u, sc] of scores) await submitEstimate(r, CH, u, makeRec(sc, 1000));
+  for (const u of ['t2_c', 't2_d', 't2_e'] as const) {
+    const stats = await getDailyStats(r, CH, u);
+    assert.equal(stats.players, 10);
+    // strictly below 70: 40,45,50,55,60,65 → 6 of 10; the other 70s never count
+    assert.equal(stats.percentile, 60, `${u} ties must never count as beaten`);
+  }
+  const top = await getDailyStats(r, CH, 't2_j');
+  assert.equal(top.percentile, 90); // beat 9 of 10 (never themself)
+  const bottom = await getDailyStats(r, CH, 't2_a');
+  assert.equal(bottom.percentile, 0);
+});
+
+test('percentile works with negative scores (exclusive bound parsing)', async () => {
+  const r = new MockRedisWithZSets();
+  const scores: Array<[string, number]> = [
+    ['t2_n1', -14.4],
+    ['t2_n2', -3.2],
+    ['t2_p', 53.4],
+    ['t2_m1', -226],
+    ['t2_m2', -100],
+    ['t2_x1', 10],
+    ['t2_x2', 20],
+    ['t2_x3', 30],
+    ['t2_x4', 85],
+    ['t2_x5', 94],
+  ];
+  for (const [u, sc] of scores) await submitEstimate(r, CH, u, makeRec(sc, 1000));
+  const good = await getDailyStats(r, CH, 't2_p');
+  assert.equal(good.players, 10);
+  // strictly below 53.4: -226,-100,-14.4,-3.2,10,20,30 → 7
+  assert.equal(good.percentile, 70);
+  const bad = await getDailyStats(r, CH, 't2_n1');
+  // strictly below -14.4: -226, -100 → 2
+  assert.equal(bad.percentile, 20);
+  const worst = await getDailyStats(r, CH, 't2_m1');
+  assert.equal(worst.percentile, 0);
 });

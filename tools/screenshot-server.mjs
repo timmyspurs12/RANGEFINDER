@@ -53,14 +53,17 @@ const pristine = {
   draft: scenario.draft,
   daily: { players: scenario.players, percentile: null },
 };
-// Every /api/state GET resets the fixture — headless runs must be
-// independent of whatever a previous run submitted.
+// Every /api/state GET resets the fixture (default) so headless screenshot
+// runs stay independent of earlier submissions. RESET_STATE=0 keeps the
+// submitted state persistent — used by diag-reload.mjs to verify that the
+// REAL app restores the result after a reload.
+const RESET_ON_GET = process.env.RESET_STATE !== '0';
 let state = { ...pristine };
 
 createServer((req, res) => {
   const url = (req.url ?? '/').split('?')[0];
   if (url === '/api/state') {
-    state = { ...pristine };
+    if (RESET_ON_GET) state = { ...pristine };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(state));
     return;

@@ -19,12 +19,14 @@ export interface DailyStats {
 }
 
 /**
- * Percentile from an ascending zset rank (0 = lowest score). Conservative:
- * counts the player themself as "not beaten". Returns null below the
+ * Percentile from the count of players scoring STRICTLY LOWER than the caller
+ * (ties are never counted as beaten — two players with the same score always
+ * share the same percentile). Conservative: the caller is included in the
+ * denominator, so they never appear to beat themself. Returns null below the
  * visibility threshold — the UI shows "Be among the first today" instead.
  */
-export function percentileFromRank(ascendingRank: number, players: number): number | null {
+export function percentileFromLowerCount(lowerCount: number, players: number): number | null {
   if (players < MIN_SUBMISSIONS_FOR_PERCENTILE) return null;
-  const clamped = Math.min(Math.max(ascendingRank, 0), players - 1);
+  const clamped = Math.min(Math.max(lowerCount, 0), players - 1);
   return Math.round((clamped / players) * 100);
 }

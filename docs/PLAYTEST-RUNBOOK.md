@@ -595,6 +595,38 @@ await fetch('/api/erase', { method: 'POST' }).then((r) => r.json());
 | Backend errors mentioning storage limits | Unpublished apps have a smaller Redis quota — clear data (`devvit uninstall` §8) and retry. |
 | Logs empty in the second terminal | `devvit logs` needs an active installation; keep the playtest session running, add `-s 30m`. |
 
+## D2. Daily-stats verification (Stage 3.7 hardening)
+
+The server logs ONE line per accepted submission, tagged for grep:
+
+```
+[rangefinder:stats] accepted submission — challenge:{id}:scores players now: 14
+```
+
+**To confirm the daily ZSET is written and the player count increments:**
+
+1. With the playtest session running, tail the logs in a third terminal:
+   `npx devvit logs -s 30m`
+2. Submit your estimate as a logged-in user. Expect the line above with a
+   count that increments by exactly 1 (e.g. 3 → 4).
+3. Submit again / reload the post: **no new stats line** — duplicates and
+   replays never write the ZSET (the client shows your restored result).
+4. A second Reddit account submitting the same day increments the same
+   counter. (Accounts are per-person; for the hackathon window a second
+   personal account is the documented verification path.)
+5. Negative confirmation: if a submission is accepted but the line instead
+   shows `[rangefinder:stats] tx.zAdd unavailable on this Redis client — …`,
+   the SDK dropped sorted-set support from the transaction client — capture
+   the log and report it; the submission itself still scored correctly.
+6. Player-count/percentile visibility on the card: under 10 real submissions
+   the reveal shows "Be among the first today — N playing so far" (N = the
+   real count); at ≥10 it shows "Better than X% of today's N players" where X
+   counts only strictly-lower scores (ties never count as beaten).
+
+The counter lives in Redis key `challenge:{challengeId}:scores`
+(member = user id, score = exact server S, TTL 35 days) and is erased by
+`POST /api/erase` alongside the submission.
+
 ## E. Results record (fill in during/after the session)
 
 ```

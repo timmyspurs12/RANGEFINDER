@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 
 import { TIER_CONFIG, tierFor, verdictLine } from './tiers.ts';
 import { buildShareText } from './shareText.ts';
-import { MIN_SUBMISSIONS_FOR_PERCENTILE, percentileFromRank } from './community.ts';
+import { MIN_SUBMISSIONS_FOR_PERCENTILE, percentileFromLowerCount } from './community.ts';
 
 describe('tiers — server flag decides, never the sign of the score', () => {
   it('caught boundaries match the config exactly', () => {
@@ -69,18 +69,25 @@ describe('share text — spoiler-free by construction', () => {
   });
 });
 
-describe('percentile — real data only, threshold-gated', () => {
+describe('percentile — real data only, threshold-gated, tie-strict', () => {
   it('null below MIN_SUBMISSIONS_FOR_PERCENTILE', () => {
-    assert.equal(percentileFromRank(2, MIN_SUBMISSIONS_FOR_PERCENTILE - 1), null);
-    assert.equal(percentileFromRank(2, 3), null);
+    assert.equal(percentileFromLowerCount(2, MIN_SUBMISSIONS_FOR_PERCENTILE - 1), null);
+    assert.equal(percentileFromLowerCount(2, 3), null);
   });
   it('computes conservatively at/above the threshold', () => {
-    assert.equal(percentileFromRank(0, 10), 0);
-    assert.equal(percentileFromRank(5, 10), 50);
-    assert.equal(percentileFromRank(9, 10), 90);
+    assert.equal(percentileFromLowerCount(0, 10), 0);
+    assert.equal(percentileFromLowerCount(5, 10), 50);
+    assert.equal(percentileFromLowerCount(9, 10), 90);
   });
-  it('clamps out-of-range ranks', () => {
-    assert.equal(percentileFromRank(-3, 20), 0);
-    assert.equal(percentileFromRank(99, 20), Math.round((19 / 20) * 100));
+  it('ties count only STRICTLY lower scores — equal scores share a percentile', () => {
+    // Ten players with scores [40,45,50,55,60,65,70,70,70,90]: each 70-scorer
+    // beat exactly 6 players (40..65) — never the other 70s.
+    assert.equal(percentileFromLowerCount(6, 10), 60);
+    // All-tied field: nobody beats anybody.
+    assert.equal(percentileFromLowerCount(0, 10), 0);
+  });
+  it('clamps out-of-range counts', () => {
+    assert.equal(percentileFromLowerCount(-3, 20), 0);
+    assert.equal(percentileFromLowerCount(99, 20), Math.round((19 / 20) * 100));
   });
 });
